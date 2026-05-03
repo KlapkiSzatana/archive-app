@@ -1,0 +1,20 @@
+pkgbase = archive-app
+	pkgdesc = Menedżer Domowego Archiwum Dokumentów
+	pkgver = 1.0.0
+	pkgrel = 1
+	url = https://github.com/KlapkiSzatana/archive-app
+	arch = any
+	license = GPL-3.0
+	depends = python
+	depends = pyside6
+	depends = python-pillow
+	depends = ghostscript
+	depends = imagemagick
+	source = archive-app.py
+	source = logic.py
+	source = archive.png
+	sha256sums = 096a53a72066a90c41fbff250502b32f336a71333d48edcdf8104a374dbb16e6
+	sha256sums = d2f3cdff6eb53f9aa20568b8c19d25a4ddec90c095e1a160bfd3453f3eb5297c
+	sha256sums = d25243e665f6a38f35e14bec53fdef35dfaf066f9c25dd85b14a11a2f4cae826
+
+pkgname = archive-app
