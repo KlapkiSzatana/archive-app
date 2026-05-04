@@ -1,9 +1,7 @@
 # 📁 Domowe Archiwum
 
-| ![archive](archive.png) | **Menedżer domowego archiwum** |
-|---|---|
-|  | Menedżer domowego archiwum dokumentów napisany w Pythonie (PySide6).  
-Aplikacja pozwala na wygodne zarządzanie skanami i dokumentami, oferując podgląd PDF dzięki integracji z Ghostscript i ImageMagick. |
+Menedżer domowego archiwum dokumentów napisany w Pythonie (PySide6).  
+Aplikacja pozwala na wygodne zarządzanie skanami i dokumentami, oferując podgląd PDF dzięki integracji z Ghostscript i ImageMagick.
 
 ---
 
