@@ -15,7 +15,7 @@ source=("archive-app.py"
 
 sha256sums=('096a53a72066a90c41fbff250502b32f336a71333d48edcdf8104a374dbb16e6'
             'd2f3cdff6eb53f9aa20568b8c19d25a4ddec90c095e1a160bfd3453f3eb5297c'
-            'd25243e665f6a38f35e14bec53fdef35dfaf066f9c25dd85b14a11a2f4cae826')
+            '77d73805e84952d5c07e6eccf27b22259ea4ed7688cf09805bb83bee8a885e64')
 
 package() {
     # Instalacja plików źródłowych Pythona
