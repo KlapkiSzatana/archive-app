@@ -13,7 +13,7 @@ source=("archive-app.py"
         "logic.py"
         "archive.png")
 
-sha256sums=('096a53a72066a90c41fbff250502b32f336a71333d48edcdf8104a374dbb16e6'
+sha256sums=('ae0250a6817ac33cc4569c9d8fe084ae5a7dd224d9cf50be9e03409b55c3bf41'
             'd2f3cdff6eb53f9aa20568b8c19d25a4ddec90c095e1a160bfd3453f3eb5297c'
             '77d73805e84952d5c07e6eccf27b22259ea4ed7688cf09805bb83bee8a885e64')
 

@@ -34,7 +34,7 @@ from PySide6.QtWidgets import (
 
 from logic import ArchiveLogic
 
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 COPYRIGHT = "KlapkiSzatana"
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg"}
 PDF_PREVIEW_OUTPUT = "/tmp/archi_final.png"
