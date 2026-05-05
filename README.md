@@ -29,6 +29,24 @@ cd archive-app
 makepkg -si
 ```
 
+lub
+
+## Instalacja (Arch z AUR)
+
+Aplikację można łatwo zainstalować z repozytorium **AUR (Arch User Repository)**.
+
+### Szybka instalacja (zalecana)
+
+Jeśli używasz pomocnika AUR (np. `yay` lub `paru`), wpisz w terminalu:
+
+```bash
+yay -S budget-app
+```
+lub
+```bash
+paru -S budget-app
+```
+
 ## 🚀 Uruchamianie
 
 Po instalacji aplikację możesz uruchomić:
