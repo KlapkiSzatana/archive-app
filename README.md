@@ -40,11 +40,11 @@ Aplikację można łatwo zainstalować z repozytorium **AUR (Arch User Repositor
 Jeśli używasz pomocnika AUR (np. `yay` lub `paru`), wpisz w terminalu:
 
 ```bash
-yay -S budget-app
+yay -S archive-app
 ```
 lub
 ```bash
-paru -S budget-app
+paru -S archive-app
 ```
 
 ## 🚀 Uruchamianie
