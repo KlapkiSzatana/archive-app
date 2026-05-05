@@ -1,12 +1,38 @@
+import mimetypes
 import os
 import sqlite3
 import subprocess
 import sys
+import tarfile
+import zipfile
 from datetime import datetime
 from functools import partial
 
-from PySide6.QtCore import QDate, QItemSelectionModel, QLocale, QSettings, Qt, QTranslator
-from PySide6.QtGui import QFont, QIcon, QPixmap, QStandardItem, QStandardItemModel
+from PySide6.QtCore import (
+    QDate,
+    QItemSelectionModel,
+    QLocale,
+    QObject,
+    QRunnable,
+    QSize,
+    QSettings,
+    Qt,
+    QThreadPool,
+    QTimer,
+    QTranslator,
+    Signal,
+    QModelIndex,
+)
+from PySide6.QtGui import (
+    QFont,
+    QFontDatabase,
+    QIcon,
+    QImageReader,
+    QPixmap,
+    QStandardItem,
+    QStandardItemModel,
+)
+from PySide6.QtPdf import QPdfDocument
 from PySide6.QtWidgets import (
     QApplication,
     QDateEdit,
@@ -22,10 +48,12 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMenu,
     QMessageBox,
+    QPlainTextEdit,
     QProgressBar,
     QPushButton,
     QSizePolicy,
     QSplitter,
+    QStackedWidget,
     QTextEdit,
     QTreeView,
     QVBoxLayout,
@@ -34,10 +62,56 @@ from PySide6.QtWidgets import (
 
 from logic import ArchiveLogic
 
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.1.2"
 COPYRIGHT = "KlapkiSzatana"
-IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg"}
-PDF_PREVIEW_OUTPUT = "/tmp/archi_final.png"
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff", ".webp", ".svg"}
+TEXT_EXTENSIONS = {
+    ".txt",
+    ".md",
+    ".csv",
+    ".json",
+    ".xml",
+    ".yaml",
+    ".yml",
+    ".ini",
+    ".cfg",
+    ".log",
+    ".py",
+    ".js",
+    ".ts",
+    ".css",
+    ".html",
+    ".htm",
+    ".sql",
+    ".eml",
+}
+OFFICE_EXTENSIONS = {
+    ".doc",
+    ".docx",
+    ".odt",
+    ".rtf",
+    ".xls",
+    ".xlsx",
+    ".ods",
+    ".ppt",
+    ".pptx",
+    ".odp",
+    ".pps",
+    ".ppsx",
+    ".odg",
+}
+ARCHIVE_EXTENSIONS = {
+    ".zip",
+    ".tar",
+    ".gz",
+    ".tgz",
+    ".bz2",
+    ".tbz2",
+    ".xz",
+    ".txz",
+}
+MAX_TEXT_PREVIEW_BYTES = 1024 * 1024
+ARCHIVE_ENTRY_LIMIT = 300
 
 
 class ProcessingDialog(QDialog):
@@ -179,18 +253,263 @@ class BackupRestoreDialog(QDialog):
         restart_application()
 
 
+def _format_file_size(size):
+    """Zamienia rozmiar pliku w bajtach na czytelny zapis dla użytkownika."""
+    value = float(size)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if unit == "B":
+            if value < 1024:
+                return f"{int(value)} {unit}"
+        elif value < 1024:
+            return f"{value:.1f} {unit}"
+        value /= 1024
+    return f"{value:.1f} PB"
+
+
+def _looks_like_text_file(path):
+    """Heurystycznie rozpoznaje, czy plik nadaje się do wyświetlenia jako tekst."""
+    mime_type, _ = mimetypes.guess_type(path)
+    if mime_type and (
+        mime_type.startswith("text/")
+        or mime_type in {"application/json", "application/xml", "application/x-sh"}
+    ):
+        return True
+
+    with open(path, "rb") as handle:
+        sample = handle.read(4096)
+
+    if not sample:
+        return True
+    if b"\x00" in sample:
+        return False
+
+    printable = sum(
+        1
+        for byte in sample
+        if byte in b"\t\n\r\f\b" or 32 <= byte <= 126 or byte >= 128
+    )
+    return printable / len(sample) >= 0.9
+
+
+def _read_text_preview(path):
+    """Wczytuje tekstowy podgląd pliku z limitem wielkości i prostym fallbackiem kodowania."""
+    with open(path, "rb") as handle:
+        raw = handle.read(MAX_TEXT_PREVIEW_BYTES + 1)
+
+    truncated = len(raw) > MAX_TEXT_PREVIEW_BYTES
+    raw = raw[:MAX_TEXT_PREVIEW_BYTES]
+
+    for encoding in ("utf-8", "cp1250", "latin-1"):
+        try:
+            text = raw.decode(encoding)
+            break
+        except UnicodeDecodeError:
+            continue
+    else:
+        text = raw.decode("utf-8", errors="replace")
+
+    if truncated:
+        text += "\n\n[Podgląd skrócony do 1 MB]"
+    return text
+
+
+def _build_archive_preview(path):
+    """Tworzy tekstową listę zawartości obsługiwanych archiwów."""
+    lines = [f"Archiwum: {os.path.basename(path)}", ""]
+
+    if zipfile.is_zipfile(path):
+        with zipfile.ZipFile(path) as archive:
+            entries = archive.infolist()
+            lines.append(f"Liczba plików: {len(entries)}")
+            lines.append("")
+            for info in entries[:ARCHIVE_ENTRY_LIMIT]:
+                marker = "/" if info.is_dir() else ""
+                size = "-" if info.is_dir() else _format_file_size(info.file_size)
+                lines.append(f"{info.filename}{marker}    {size}")
+            if len(entries) > ARCHIVE_ENTRY_LIMIT:
+                lines.append("")
+                lines.append(f"... i jeszcze {len(entries) - ARCHIVE_ENTRY_LIMIT} pozycji")
+            return "\n".join(lines)
+
+    if tarfile.is_tarfile(path):
+        with tarfile.open(path) as archive:
+            entries = archive.getmembers()
+            lines.append(f"Liczba plików: {len(entries)}")
+            lines.append("")
+            for info in entries[:ARCHIVE_ENTRY_LIMIT]:
+                marker = "/" if info.isdir() else ""
+                size = "-" if info.isdir() else _format_file_size(info.size)
+                lines.append(f"{info.name}{marker}    {size}")
+            if len(entries) > ARCHIVE_ENTRY_LIMIT:
+                lines.append("")
+                lines.append(f"... i jeszcze {len(entries) - ARCHIVE_ENTRY_LIMIT} pozycji")
+            return "\n".join(lines)
+
+    raise ValueError("Ten typ archiwum nie ma wbudowanego podglądu.")
+
+
+def _build_binary_summary(path):
+    """Buduje krótki opis pliku, gdy nie ma lepszego podglądu zawartości."""
+    stat_result = os.stat(path)
+    mime_type, _ = mimetypes.guess_type(path)
+    extension = os.path.splitext(path)[1].lower() or "(brak)"
+
+    return "\n".join(
+        [
+            f"Nazwa: {os.path.basename(path)}",
+            f"Rozszerzenie: {extension}",
+            f"Rozmiar: {_format_file_size(stat_result.st_size)}",
+            f"MIME: {mime_type or 'nieznany'}",
+            "",
+            "Brak wbudowanego podglądu dla tego typu pliku.",
+            "Kliknij dokument dwa razy, aby otworzyć go w zewnętrznej aplikacji.",
+        ]
+    )
+
+
+def _detect_office_document(path):
+    """Rozpoznaje dokumenty Office po rozszerzeniu, MIME lub strukturze archiwum."""
+    extension = os.path.splitext(path)[1].lower()
+    if extension in OFFICE_EXTENSIONS:
+        return "Dokument Office"
+
+    mime_type, _ = mimetypes.guess_type(path)
+    if mime_type:
+        if mime_type.startswith("application/vnd.oasis.opendocument"):
+            return "Dokument OpenDocument"
+        if mime_type.startswith("application/vnd.openxmlformats-officedocument"):
+            return "Dokument Office Open XML"
+        if mime_type in {
+            "application/msword",
+            "application/vnd.ms-excel",
+            "application/vnd.ms-powerpoint",
+            "application/rtf",
+        }:
+            return "Dokument Office"
+
+    if not zipfile.is_zipfile(path):
+        return None
+
+    try:
+        with zipfile.ZipFile(path) as archive:
+            names = set(archive.namelist())
+
+            if "mimetype" in names:
+                odf_mime = archive.read("mimetype").decode("utf-8", errors="replace").strip()
+                if odf_mime.startswith("application/vnd.oasis.opendocument"):
+                    return "Dokument OpenDocument"
+
+            if "[Content_Types].xml" in names:
+                if any(name.startswith("word/") for name in names):
+                    return "Dokument Word"
+                if any(name.startswith("xl/") for name in names):
+                    return "Arkusz Excel"
+                if any(name.startswith("ppt/") for name in names):
+                    return "Prezentacja PowerPoint"
+                return "Dokument Office Open XML"
+    except (KeyError, OSError, zipfile.BadZipFile):
+        return None
+
+    return None
+
+
+def _build_office_summary(path, office_type):
+    """Buduje informację zastępczą dla dokumentów Office otwieranych zewnętrznie."""
+    stat_result = os.stat(path)
+    mime_type, _ = mimetypes.guess_type(path)
+    extension = os.path.splitext(path)[1].lower() or "(brak)"
+
+    return "\n".join(
+        [
+            f"Nazwa: {os.path.basename(path)}",
+            f"Typ: {office_type}",
+            f"Rozszerzenie: {extension}",
+            f"Rozmiar: {_format_file_size(stat_result.st_size)}",
+            f"MIME: {mime_type or 'nieznany'}",
+            "",
+            "Podgląd dla dokumentów Office jest wyłączony.",
+            "Otwórz plik dwuklikiem, aby uruchomić go w zewnętrznej aplikacji.",
+        ]
+    )
+
+
+def _resolve_preview_data(path):
+    """Dobiera najlepszy sposób podglądu dla wskazanego pliku."""
+    office_type = _detect_office_document(path)
+    if office_type:
+        return {
+            "kind": "text",
+            "content": _build_office_summary(path, office_type),
+            "label": "Office",
+        }
+
+    extension = os.path.splitext(path)[1].lower()
+    if extension in TEXT_EXTENSIONS or _looks_like_text_file(path):
+        return {
+            "kind": "text",
+            "content": _read_text_preview(path),
+            "label": "Tekst",
+        }
+
+    if extension in ARCHIVE_EXTENSIONS or zipfile.is_zipfile(path) or tarfile.is_tarfile(path):
+        return {
+            "kind": "text",
+            "content": _build_archive_preview(path),
+            "label": "Archiwum",
+        }
+
+    return {
+        "kind": "text",
+        "content": _build_binary_summary(path),
+        "label": "Plik",
+    }
+
+
+class PreviewWorkerSignals(QObject):
+    """Udostępnia sygnał z wynikiem generowania podglądu w tle."""
+
+    finished = Signal(dict)
+
+
+class PreviewWorker(QRunnable):
+    """Przygotowuje dane podglądu w tle, aby nie blokować interfejsu."""
+
+    def __init__(self, request_id, path):
+        """Zapamiętuje identyfikator żądania i ścieżkę pliku do analizy."""
+        super().__init__()
+        self.request_id = request_id
+        self.path = path
+        self.signals = PreviewWorkerSignals()
+
+    def run(self):
+        """Generuje wynik podglądu i odsyła go do wątku GUI."""
+        try:
+            result = _resolve_preview_data(self.path)
+        except Exception as exc:
+            result = {
+                "kind": "error",
+                "message": str(exc) or "Nie udało się przygotować podglądu.",
+            }
+
+        result["request_id"] = self.request_id
+        self.signals.finished.emit(result)
+
+
 class DynamicPreviewLabel(QLabel):
-    """Skaluje podgląd obrazu do rozmiaru panelu bez utraty proporcji."""
+    """Skaluje obraz do całego pola podglądu i przechwytuje kółko do zmiany stron."""
+
+    resized = Signal()
+    page_step_requested = Signal(int)
 
     def __init__(self):
-        """Przygotowuje etykietę do wyświetlania podglądu plików."""
+        """Przygotowuje etykietę do wyświetlania podglądu obrazu."""
         super().__init__()
         self.pix = None
+        self.wheel_paging_enabled = False
         self.setAlignment(Qt.AlignCenter)
         self.setStyleSheet("background: #000;")
         self.setMinimumSize(1, 1)
-        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
-        self.show_message("Podgląd")
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
     def set_pixmap(self, pixmap):
         """Zapamiętuje oryginalny obraz i uruchamia jego przeskalowanie."""
@@ -198,22 +517,363 @@ class DynamicPreviewLabel(QLabel):
         super().setText("")
         self.update_scaling()
 
-    def show_message(self, text):
-        """Czyści podgląd obrazu i pokazuje komunikat tekstowy."""
+    def clear_pixmap(self):
+        """Czyści obecny obraz, pozostawiając pusty stan kontrolki."""
         self.pix = None
         super().setPixmap(QPixmap())
-        super().setText(text)
+
+    def set_wheel_paging_enabled(self, enabled):
+        """Włącza lub wyłącza traktowanie kółka myszy jako zmiany strony."""
+        self.wheel_paging_enabled = enabled
 
     def update_scaling(self):
-        """Przeskalowuje obraz do bieżącego rozmiaru etykiety."""
-        if self.pix and not self.pix.isNull():
-            scaled = self.pix.scaled(self.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            super().setPixmap(scaled)
+        """Dopasowuje obraz do całego dostępnego pola, zachowując proporcje."""
+        if not self.pix or self.pix.isNull():
+            return
+
+        available_width = max(1, self.width() - 24)
+        available_height = max(1, self.height() - 24)
+        scaled = self.pix.scaled(
+            available_width,
+            available_height,
+            Qt.KeepAspectRatio,
+            Qt.SmoothTransformation,
+        )
+        super().setPixmap(scaled)
 
     def resizeEvent(self, event):
-        """Odświeża skalowanie po zmianie rozmiaru panelu."""
+        """Skaluje obraz po zmianie rozmiaru i informuje panel o nowym viewportcie."""
         self.update_scaling()
+        self.resized.emit()
         super().resizeEvent(event)
+
+    def wheelEvent(self, event):
+        """Dla dokumentów wielostronicowych zamienia ruch kółka na zmianę strony."""
+        if self.wheel_paging_enabled and event.angleDelta().y():
+            step = 1 if event.angleDelta().y() < 0 else -1
+            self.page_step_requested.emit(step)
+            event.accept()
+            return
+        event.ignore()
+
+
+class PreviewPanel(QWidget):
+    """Wielotypowy panel podglądu dla obrazów, PDF i plików tekstowych."""
+
+    def __init__(self):
+        """Buduje pasek narzędzi oraz widoki używane przez różne typy plików."""
+        super().__init__()
+        self.request_id = 0
+        self.thread_pool = QThreadPool.globalInstance()
+        self.current_preview_kind = None
+        self.current_pdf_page = 0
+        self.pdf_mode_label = "PDF"
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        toolbar = QHBoxLayout()
+        toolbar.setContentsMargins(0, 0, 0, 0)
+
+        self.mode_label = QLabel("Podgląd")
+        self.page_label = QLabel("")
+
+        self.btn_prev = QPushButton("◀")
+        self.btn_next = QPushButton("▶")
+        self.btn_prev.setFocusPolicy(Qt.NoFocus)
+        self.btn_next.setFocusPolicy(Qt.NoFocus)
+        self.btn_prev.setFixedWidth(42)
+        self.btn_next.setFixedWidth(42)
+        self.btn_prev.clicked.connect(self.show_previous_page)
+        self.btn_next.clicked.connect(self.show_next_page)
+
+        toolbar.addWidget(self.mode_label)
+        toolbar.addStretch(1)
+        toolbar.addWidget(self.btn_prev)
+        toolbar.addWidget(self.page_label)
+        toolbar.addWidget(self.btn_next)
+
+        self.stack = QStackedWidget()
+
+        self.status_label = QLabel("Podgląd")
+        self.status_label.setAlignment(Qt.AlignCenter)
+        self.status_label.setStyleSheet(
+            "background: #101010; color: #f2f2f2; font-size: 16px; border: 1px solid #222;"
+        )
+
+        self.preview_label = DynamicPreviewLabel()
+        self.preview_label.page_step_requested.connect(self._change_pdf_page)
+        self.preview_label.resized.connect(self._handle_preview_resized)
+
+        self.text_view = QPlainTextEdit()
+        self.text_view.setReadOnly(True)
+        self.text_view.setLineWrapMode(QPlainTextEdit.NoWrap)
+        self.text_view.setFont(QFontDatabase.systemFont(QFontDatabase.FixedFont))
+        self.text_view.setStyleSheet(
+            "QPlainTextEdit { background: #101010; color: #f2f2f2; border: 1px solid #222; }"
+        )
+
+        self.pdf_document = QPdfDocument(self)
+        self.pdf_document.statusChanged.connect(self._on_pdf_status_changed)
+        self.pdf_document.pageCountChanged.connect(self._update_pdf_controls)
+
+        self.pdf_render_timer = QTimer(self)
+        self.pdf_render_timer.setSingleShot(True)
+        self.pdf_render_timer.timeout.connect(self._render_current_pdf_page)
+
+        self.stack.addWidget(self.status_label)
+        self.stack.addWidget(self.preview_label)
+        self.stack.addWidget(self.text_view)
+
+        layout.addLayout(toolbar)
+        layout.addWidget(self.stack, 1)
+
+        self.show_message("Podgląd")
+
+    def show_message(self, text, mode="Podgląd"):
+        """Pokazuje prosty komunikat statusu zamiast właściwego podglądu."""
+        self.current_preview_kind = None
+        self.current_pdf_page = 0
+        self.pdf_render_timer.stop()
+        self.pdf_document.close()
+        self.preview_label.set_wheel_paging_enabled(False)
+        self.preview_label.clear_pixmap()
+        self.text_view.clear()
+        self.mode_label.setText(mode)
+        self.page_label.setText("")
+        self.btn_prev.setEnabled(False)
+        self.btn_next.setEnabled(False)
+        self.status_label.setText(text)
+        self.stack.setCurrentWidget(self.status_label)
+
+    def set_loading(self, text):
+        """Pokazuje stan ładowania podczas pracy w tle."""
+        self.show_message(text, "Ładowanie")
+
+    def show_folder(self):
+        """Pokazuje pusty stan dla zaznaczonego folderu."""
+        self.request_id += 1
+        self.show_message("Katalog")
+
+    def preview_file(self, path):
+        """Dobiera odpowiedni renderer i uruchamia podgląd wskazanego pliku."""
+        self.request_id += 1
+
+        if not path or not os.path.exists(path):
+            self.show_message("Brak pliku")
+            return
+
+        extension = os.path.splitext(path)[1].lower()
+        if extension in IMAGE_EXTENSIONS:
+            self._show_image(path)
+            return
+
+        if extension == ".pdf":
+            self._show_pdf(path, "PDF")
+            return
+
+        loading_message = "Ładowanie podglądu..."
+        if extension in OFFICE_EXTENSIONS:
+            loading_message = "Przygotowanie informacji o dokumencie Office..."
+        elif extension in ARCHIVE_EXTENSIONS:
+            loading_message = "Odczyt archiwum..."
+
+        self.set_loading(loading_message)
+        worker = PreviewWorker(self.request_id, path)
+        worker.signals.finished.connect(self._handle_worker_result)
+        self.thread_pool.start(worker)
+
+    def _show_image(self, path):
+        """Wczytuje obraz lokalnie i dopasowuje go do całego obszaru podglądu."""
+        self.current_preview_kind = "image"
+        self.current_pdf_page = 0
+        self.pdf_render_timer.stop()
+        self.pdf_document.close()
+        reader = QImageReader(path)
+        reader.setAutoTransform(True)
+        image = reader.read()
+        if image.isNull():
+            self.show_message("Błąd obrazu")
+            return
+
+        self.preview_label.set_wheel_paging_enabled(False)
+        self.preview_label.set_pixmap(QPixmap.fromImage(image))
+        self.mode_label.setText("Obraz")
+        self.page_label.setText("1 / 1")
+        self.btn_prev.setEnabled(False)
+        self.btn_next.setEnabled(False)
+        self.stack.setCurrentWidget(self.preview_label)
+
+    def _show_text(self, text, mode):
+        """Wyświetla tekstowy podgląd pliku lub opis fallbackowy."""
+        self.current_preview_kind = "text"
+        self.current_pdf_page = 0
+        self.pdf_render_timer.stop()
+        self.pdf_document.close()
+        self.preview_label.set_wheel_paging_enabled(False)
+        self.preview_label.clear_pixmap()
+        self.text_view.setPlainText(text)
+        self.text_view.verticalScrollBar().setValue(0)
+        self.mode_label.setText(mode)
+        self.page_label.setText("")
+        self.btn_prev.setEnabled(False)
+        self.btn_next.setEnabled(False)
+        self.stack.setCurrentWidget(self.text_view)
+
+    def _show_pdf(self, path, mode):
+        """Ładuje dokument PDF i renderuje zawsze jedną pełną stronę w panelu."""
+        self.current_preview_kind = "pdf"
+        self.current_pdf_page = 0
+        self.pdf_mode_label = mode
+        self.pdf_render_timer.stop()
+        self.preview_label.clear_pixmap()
+        self.preview_label.set_wheel_paging_enabled(True)
+        self.text_view.clear()
+        self.mode_label.setText(mode)
+        self.page_label.setText("")
+        self.btn_prev.setEnabled(False)
+        self.btn_next.setEnabled(False)
+        self.status_label.setText("Ładowanie PDF...")
+        self.stack.setCurrentWidget(self.status_label)
+
+        self.pdf_document.close()
+        error = self.pdf_document.load(path)
+        if error != QPdfDocument.Error.None_:
+            self.show_message("Błąd podglądu PDF")
+            return
+
+        if self.pdf_document.status() == QPdfDocument.Status.Ready:
+            self._render_current_pdf_page()
+
+    def _handle_worker_result(self, result):
+        """Nakłada wynik pracy w tle tylko wtedy, gdy dotyczy aktualnego dokumentu."""
+        if result.get("request_id") != self.request_id:
+            return
+
+        kind = result.get("kind")
+        if kind == "pdf":
+            self._show_pdf(result["path"], result.get("label", "Dokument"))
+            return
+
+        if kind == "text":
+            self._show_text(result.get("content", ""), result.get("label", "Podgląd"))
+            return
+
+        self.show_message(result.get("message", "Brak podglądu"))
+
+    def _on_pdf_status_changed(self, status):
+        """Reaguje na zmianę statusu ładowania dokumentu PDF."""
+        if self.current_preview_kind != "pdf":
+            return
+
+        if status == QPdfDocument.Status.Ready and self.pdf_document.pageCount() > 0:
+            self.current_pdf_page = min(self.current_pdf_page, self.pdf_document.pageCount() - 1)
+            self._render_current_pdf_page()
+            return
+
+        if status == QPdfDocument.Status.Error:
+            self.show_message("Błąd podglądu PDF")
+
+    def _handle_preview_resized(self):
+        """Przy zmianie rozmiaru okna odświeża stronę PDF z krótkim debounce."""
+        if self.current_preview_kind != "pdf":
+            return
+        if self.pdf_document.status() != QPdfDocument.Status.Ready:
+            return
+        self.pdf_render_timer.start(60)
+
+    def _render_current_pdf_page(self):
+        """Renderuje bieżącą stronę PDF tak, aby zawsze mieściła się cała w panelu."""
+        if self.current_preview_kind != "pdf":
+            return
+        if self.pdf_document.status() != QPdfDocument.Status.Ready:
+            return
+
+        total_pages = self.pdf_document.pageCount()
+        if total_pages <= 0:
+            self.show_message("Pusty PDF")
+            return
+
+        self.current_pdf_page = max(0, min(self.current_pdf_page, total_pages - 1))
+        page_size = self.pdf_document.pagePointSize(self.current_pdf_page)
+        if page_size.width() <= 0 or page_size.height() <= 0:
+            self.show_message("Błąd rozmiaru strony PDF")
+            return
+
+        available_width = max(1, self.preview_label.width() - 24)
+        available_height = max(1, self.preview_label.height() - 24)
+        scale = min(
+            available_width / page_size.width(),
+            available_height / page_size.height(),
+        )
+        if scale <= 0:
+            return
+
+        render_size = QSize(
+            max(1, int(page_size.width() * scale)),
+            max(1, int(page_size.height() * scale)),
+        )
+        image = self.pdf_document.render(self.current_pdf_page, render_size)
+        if image.isNull():
+            self.show_message("Błąd renderowania PDF")
+            return
+
+        # Importujemy klasy potrzebne do dodania białego tła
+        from PySide6.QtGui import QImage, QPainter, QColor
+
+        # Tworzymy nowy obraz o stałym, białym tle
+        white_image = QImage(image.size(), QImage.Format_RGB32)
+        white_image.fill(QColor(Qt.white))
+
+        # Naniesienie wyrenderowanego pliku na przygotowane tło
+        painter = QPainter(white_image)
+        painter.drawImage(0, 0, image)
+        painter.end()
+
+        self.preview_label.set_pixmap(QPixmap.fromImage(white_image))
+        self.mode_label.setText(self.pdf_mode_label)
+        self.stack.setCurrentWidget(self.preview_label)
+        self._update_pdf_controls()
+
+    def _update_pdf_controls(self, *_args):
+        """Aktualizuje licznik stron i stan przycisków nawigacji PDF."""
+        if self.current_preview_kind != "pdf":
+            return
+
+        total_pages = self.pdf_document.pageCount()
+        if total_pages <= 0:
+            self.page_label.setText("")
+            self.btn_prev.setEnabled(False)
+            self.btn_next.setEnabled(False)
+            return
+
+        self.page_label.setText(f"{self.current_pdf_page + 1} / {total_pages}")
+        self.btn_prev.setEnabled(self.current_pdf_page > 0)
+        self.btn_next.setEnabled(self.current_pdf_page < total_pages - 1)
+
+    def _change_pdf_page(self, step):
+        """Zmienia stronę PDF o wskazany krok i renderuje ją na nowo."""
+        if self.current_preview_kind != "pdf":
+            return
+        if self.pdf_document.status() != QPdfDocument.Status.Ready:
+            return
+
+        total_pages = self.pdf_document.pageCount()
+        new_page = max(0, min(self.current_pdf_page + step, total_pages - 1))
+        if new_page == self.current_pdf_page:
+            return
+
+        self.current_pdf_page = new_page
+        self._render_current_pdf_page()
+
+    def show_previous_page(self):
+        """Przechodzi do poprzedniej strony w aktywnym dokumencie PDF."""
+        self._change_pdf_page(-1)
+
+    def show_next_page(self):
+        """Przechodzi do następnej strony w aktywnym dokumencie PDF."""
+        self._change_pdf_page(1)
 
 
 class ArchiveModel(QStandardItemModel):
@@ -423,7 +1083,7 @@ class DomoweArchiwum(QMainWindow):
 
         right_widget = QWidget()
         right_layout = QVBoxLayout(right_widget)
-        self.preview = DynamicPreviewLabel()
+        self.preview = PreviewPanel()
         right_layout.addWidget(self.preview, 1)
 
         self.splitter.addWidget(left_widget)
@@ -528,9 +1188,27 @@ class DomoweArchiwum(QMainWindow):
         values = raw_expanded if isinstance(raw_expanded, list) else [raw_expanded]
         return [int(value) for value in values if str(value).isdigit()]
 
+    def _find_index_recursive(self, parent_idx, target_data):
+        """Pomocnicza metoda do odnalezienia wskaźnika w zrekonstruowanym drzewie."""
+        for row in range(self.model.rowCount(parent_idx)):
+            idx = self.model.index(row, 0, parent_idx)
+            data = idx.data(Qt.UserRole)
+            if data and data == target_data:
+                return idx
+            if self.model.rowCount(idx) > 0:
+                found = self._find_index_recursive(idx, target_data)
+                if found.isValid():
+                    return found
+        return QModelIndex()
+
     def odswiez_drzewo(self):
         """Odbudowuje drzewo folderów i dokumentów na podstawie stanu bazy."""
         filtr = self.search_in.text().lower().strip()
+
+        # --- ZAPISANIE AKTUALNEGO ZAZNACZENIA PRZED WYCZYSZCZENIEM ---
+        current_idx = self.tree_view.currentIndex()
+        current_data = current_idx.data(Qt.UserRole) if current_idx.isValid() else None
+
         self.model.clear()
         self.model.setHorizontalHeaderLabels(["Struktura Archiwum"])
 
@@ -594,6 +1272,13 @@ class DomoweArchiwum(QMainWindow):
                 self._select_matching_items(self.model.invisibleRootItem(), filtr, selection_model)
         else:
             self._restore_expanded_state(self._get_saved_expanded_ids())
+
+            # --- PRZYWRÓCENIE ZAZNACZENIA I WIDOKU ---
+            if current_data:
+                idx = self._find_index_recursive(QModelIndex(), current_data)
+                if idx.isValid():
+                    self.tree_view.setCurrentIndex(idx)
+                    self.tree_view.scrollTo(idx)
 
         self.btn_delete.setEnabled(self.delete_unlocked)
         prefix = "Znaleziono" if filtr else "Dokumentów"
@@ -797,63 +1482,18 @@ class DomoweArchiwum(QMainWindow):
 
         self.odswiez_drzewo()
 
-    def _show_pdf_preview(self, path):
-        """Generuje miniaturę pierwszej strony pliku PDF i pokazuje ją w panelu."""
-        try:
-            subprocess.run(
-                [
-                    "convert",
-                    "-density",
-                    "150",
-                    f"{path}[0]",
-                    "-background",
-                    "white",
-                    "-alpha",
-                    "remove",
-                    "-alpha",
-                    "off",
-                    "-thumbnail",
-                    "1200x1200",
-                    PDF_PREVIEW_OUTPUT,
-                ],
-                check=True,
-            )
-        except (FileNotFoundError, OSError, subprocess.CalledProcessError):
-            self.preview.show_message("Błąd PDF")
-            return
-
-        self.preview.set_pixmap(QPixmap(PDF_PREVIEW_OUTPUT))
-
     def on_item_clicked(self, idx):
         """Aktualizuje opis dokumentu i panel podglądu po kliknięciu w drzewie."""
         data = idx.data(Qt.UserRole)
         if not data or data["type"] != "doc":
             self.info_box.clear()
-            self.preview.show_message("Katalog")
+            self.preview.show_folder()
             return
 
         self.info_box.setText(f"Tytuł: {idx.data().split('] ', 1)[-1]}\n\nOpis: {data['info']}")
 
         path = os.path.join(self.archive_path, data["path"])
-        if not os.path.exists(path):
-            self.preview.show_message("Brak pliku")
-            return
-
-        extension = os.path.splitext(path)[1].lower()
-        if extension in IMAGE_EXTENSIONS:
-            pixmap = QPixmap(path)
-            if pixmap.isNull():
-                self.preview.show_message("Błąd obrazu")
-                return
-
-            self.preview.set_pixmap(pixmap)
-            return
-
-        if extension == ".pdf":
-            self._show_pdf_preview(path)
-            return
-
-        self.preview.show_message(f"Brak podglądu: {extension}")
+        self.preview.preview_file(path)
 
     def otworz_zewnetrznie(self, idx):
         """Otwiera dokument w domyślnej aplikacji systemowej."""

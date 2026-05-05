@@ -1,7 +1,7 @@
 # 📁 Domowe Archiwum
 
 Menedżer domowego archiwum dokumentów napisany w Pythonie (PySide6).  
-Aplikacja pozwala na wygodne zarządzanie skanami i dokumentami, oferując podgląd PDF dzięki integracji z Ghostscript i ImageMagick.
+Aplikacja pozwala na wygodne zarządzanie (katalogowanie) skanami i dokumentami, oferując podgląd PDF, TXT, PNG, JPG itp...
 
 ---
 
@@ -10,8 +10,6 @@ Aplikacja pozwala na wygodne zarządzanie skanami i dokumentami, oferując podgl
 - Python  
 - PySide6 (interfejs GUI)  
 - Pillow (obsługa obrazów)  
-- Ghostscript  
-- ImageMagick  
 
 ---
 
@@ -47,14 +45,6 @@ Jeśli instalacja odbyła się przez pacmana:
 ```bash
 sudo pacman -Rs archive-app
 ```
-
-## 🛠️ Rozwiązywanie problemów
-
-Jeśli podgląd PDF nie działa poprawnie:
-
-upewnij się, że ImageMagick ma włączoną obsługę PDF
-sprawdź plik:
-/etc/ImageMagick-7/policy.xml
 
 👤 Autor
 
