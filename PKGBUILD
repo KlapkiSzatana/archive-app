@@ -18,16 +18,13 @@ sha256sums=('cf77aae7dba5edee666677cd3c7c05d1a0405d4621b3d4429dbeff4d5d4fbd11'
             '77d73805e84952d5c07e6eccf27b22259ea4ed7688cf09805bb83bee8a885e64')
 
 package() {
-    # Instalacja plików źródłowych Pythona
     install -d "${pkgdir}/usr/share/${pkgname}"
     install -m644 "${srcdir}/archive-app.py" "${pkgdir}/usr/share/${pkgname}/"
     install -m644 "${srcdir}/logic.py" "${pkgdir}/usr/share/${pkgname}/"
 
-    # Ikona
     install -Dm644 "${srcdir}/archive.png" "${pkgdir}/usr/share/pixmaps/${pkgname}.png"
     install -m644 "${srcdir}/archive.png" "${pkgdir}/usr/share/${pkgname}/archive.png"
 
-    # Skrypt uruchamiający w /usr/bin
     install -d "${pkgdir}/usr/bin"
     cat <<EOF > "${pkgdir}/usr/bin/${pkgname}"
 #!/bin/sh
@@ -35,7 +32,6 @@ exec /usr/bin/python /usr/share/${pkgname}/archive-app.py "\$@"
 EOF
     chmod 755 "${pkgdir}/usr/bin/${pkgname}"
 
-    # Plik .desktop
     install -d "${pkgdir}/usr/share/applications"
     cat <<EOF > "${pkgdir}/usr/share/applications/${pkgname}.desktop"
 [Desktop Entry]
