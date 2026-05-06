@@ -1,6 +1,6 @@
 # Maintainer: KlapkiSzatana
 pkgname=archive-app
-pkgver=1.1.2
+pkgver=1.2.0
 pkgrel=1
 pkgdesc="Menedżer Domowego Archiwum Dokumentów"
 arch=('any')
@@ -13,7 +13,7 @@ source=("archive-app.py"
         "logic.py"
         "archive.png")
 
-sha256sums=('cf77aae7dba5edee666677cd3c7c05d1a0405d4621b3d4429dbeff4d5d4fbd11'
+sha256sums=('d1a74804fc7e5924b3ee6f32b14132acc06e164936a3a7073976171b43b202bd'
             'd2f3cdff6eb53f9aa20568b8c19d25a4ddec90c095e1a160bfd3453f3eb5297c'
             '77d73805e84952d5c07e6eccf27b22259ea4ed7688cf09805bb83bee8a885e64')
 

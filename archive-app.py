@@ -62,7 +62,7 @@ from PySide6.QtWidgets import (
 
 from logic import ArchiveLogic
 
-APP_VERSION = "1.1.2"
+APP_VERSION = "1.2.0"
 COPYRIGHT = "KlapkiSzatana"
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff", ".webp", ".svg"}
 TEXT_EXTENSIONS = {
@@ -986,6 +986,114 @@ class HardcodedSystemTranslator(QTranslator):
         del context, disambiguation, n
         return self.translations.get(source_text, source_text)
 
+from PySide6.QtGui import QKeySequence, QShortcut
+
+class ShortcutHandler(QObject):
+    """Zarządza skrótami klawiszowymi w oknie głównym programu."""
+
+    def __init__(self, window):
+        super().__init__(window)
+        self.window = window
+        self.init_shortcuts()
+
+    def init_shortcuts(self):
+        # Skróty są obecnie zarządzane przez menu (QAction).
+        # Ta klasa zostaje, aby w przyszłości móc dodawać ewentualne skróty
+        # nieobsługiwane przez pasek menu.
+        pass
+
+from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtCore import QObject, Qt
+
+class ApplicationMenu(QObject):
+    """Zarządza paskiem menu w oknie głównym programu."""
+
+    def __init__(self, window):
+        super().__init__(window)
+        self.window = window
+        self.setup_menu()
+
+    def setup_menu(self):
+        menu_bar = self.window.menuBar()
+
+        # 1. Menu Plik
+        file_menu = menu_bar.addMenu("Plik")
+
+        act_backup = QAction("📦 Kopia Zapasowa", self.window)
+        act_backup.setShortcut(QKeySequence("Ctrl+B"))
+        act_backup.triggered.connect(self.window.on_backup_dialog)
+        file_menu.addAction(act_backup)
+
+        act_change = QAction("⚙️ Zmień katalog", self.window)
+        act_change.triggered.connect(self.window.on_change_path)
+        file_menu.addAction(act_change)
+
+        file_menu.addSeparator()
+
+        act_exit = QAction("Zamknij", self.window)
+        act_exit.setShortcut(QKeySequence("Ctrl+Q"))
+        act_exit.triggered.connect(self.window.close)
+        file_menu.addAction(act_exit)
+
+        # 2. Menu Edycja
+        edit_menu = menu_bar.addMenu("Edycja")
+
+        act_add_root = QAction("📁 Nowy folder główny", self.window)
+        act_add_root.setShortcut(QKeySequence("Ctrl+Shift+N"))
+        act_add_root.triggered.connect(lambda: self.window.on_add_folder(None))
+        edit_menu.addAction(act_add_root)
+
+        act_add_sub = QAction("📂 Nowy podfolder", self.window)
+        act_add_sub.setShortcut(QKeySequence("Ctrl+N"))
+        act_add_sub.triggered.connect(self.window.action_new_sub)
+        edit_menu.addAction(act_add_sub)
+
+        act_add_file = QAction("📄 Dodaj plik", self.window)
+        act_add_file.setShortcut(QKeySequence("Ctrl+Shift+A"))
+        act_add_file.triggered.connect(self.window.action_add_file)
+        edit_menu.addAction(act_add_file)
+
+        edit_menu.addSeparator()
+
+        act_edit = QAction("✏️ Edytuj", self.window)
+        act_edit.setShortcut(QKeySequence("Ctrl+E"))
+        act_edit.triggered.connect(self.window.action_edit)
+        edit_menu.addAction(act_edit)
+
+        self.act_delete = QAction("🗑️ Usuń", self.window)
+        self.act_delete.setShortcut(QKeySequence("Delete"))
+        self.act_delete.setEnabled(self.window.delete_unlocked)
+        self.act_delete.triggered.connect(self.window.action_delete)
+        edit_menu.addAction(self.act_delete)
+
+        # 3. Menu Narzędzia
+        tools_menu = menu_bar.addMenu("Narzędzia")
+
+        self.act_lock = QAction("🔒 Zablokuj usuwanie", self.window)
+        self.act_lock.triggered.connect(self.window.toggle_delete_lock)
+        tools_menu.addAction(self.act_lock)
+
+        act_refresh = QAction("🔄 Odśwież drzewo", self.window)
+        act_refresh.setShortcut(QKeySequence("F5"))
+        act_refresh.triggered.connect(self.window.odswiez_drzewo)
+        tools_menu.addAction(act_refresh)
+
+        act_open = QAction("📂 Otwórz dokument", self.window)
+        act_open.setShortcut(QKeySequence(Qt.Key_Return))
+        act_open.triggered.connect(
+            lambda: self.window.otworz_zewnetrznie(self.window.tree_view.currentIndex())
+        )
+        tools_menu.addAction(act_open)
+
+    def update_lock_action(self, unlocked):
+        """Aktualizuje etykietę i ikonę blokady w menu."""
+        if unlocked:
+            self.act_lock.setText("🔓 Odblokuj usuwanie")
+            self.act_delete.setEnabled(True)
+        else:
+            self.act_lock.setText("🔒 Zablokuj usuwanie")
+            self.act_delete.setEnabled(False)
+
 
 class DomoweArchiwum(QMainWindow):
     """Główne okno aplikacji do zarządzania domowym archiwum dokumentów."""
@@ -1006,6 +1114,8 @@ class DomoweArchiwum(QMainWindow):
         self.splitter.setSizes([450, 950])
         self.load_settings()
         self.odswiez_drzewo()
+        self.shortcut_handler = ShortcutHandler(self)
+        self.menu_handler = ApplicationMenu(self)
 
     def _sync_expanded_state(self):
         """Zapisuje listę rozwiniętych folderów, gdy aktywne jest pełne drzewo."""
@@ -1178,6 +1288,7 @@ class DomoweArchiwum(QMainWindow):
             "🔓 Usuwanie odblokowane" if self.delete_unlocked else "🔒 Usuwanie zablokowane"
         )
         self.btn_delete.setEnabled(self.delete_unlocked)
+        self.menu_handler.update_lock_action(self.delete_unlocked)
 
     def _get_saved_expanded_ids(self):
         """Odczytuje z ustawień identyfikatory rozwiniętych folderów."""
