@@ -72,7 +72,7 @@ Poniżej link do pobrania gotowej aplikacji **bin**, wystarczy zezwolić na uruc
 
 ### Pobierz najnowszą wersję:
 
-- [Pobierz dla Linux](https://github.com/KlapkiSzatana/archive-app/releases/latest/download/archive-app-linux.bin)
+- [Pobierz dla Linux](https://github.com/KlapkiSzatana/archive-app/releases/latest/download/archive-app-linux)
 
 👤 Autor
 
