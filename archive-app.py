@@ -62,7 +62,7 @@ from PySide6.QtWidgets import (
 
 from logic import ArchiveLogic
 
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.2.1"
 COPYRIGHT = "KlapkiSzatana"
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff", ".webp", ".svg"}
 TEXT_EXTENSIONS = {
@@ -1607,7 +1607,9 @@ class DomoweArchiwum(QMainWindow):
         self.preview.preview_file(path)
 
     def otworz_zewnetrznie(self, idx):
-        """Otwiera dokument w domyślnej aplikacji systemowej."""
+        """Otwiera dokument w domyślnej aplikacji systemowej, czyszcząc środowisko PyInstallera."""
+        if not idx:
+            return
         data = idx.data(Qt.UserRole)
         if not data or data["type"] != "doc":
             return
@@ -1618,7 +1620,19 @@ class DomoweArchiwum(QMainWindow):
             return
 
         try:
-            subprocess.run(["xdg-open", path], check=False)
+            # Tworzymy kopię obecnego środowiska
+            env = os.environ.copy()
+
+            # Usuwamy LD_LIBRARY_PATH, aby systemowe narzędzia używały bibliotek systemowych
+            # a nie tych spakowanych w binarce PyInstallera
+            if "LD_LIBRARY_PATH" in env:
+                # W przypadku PyInstallera interesujące nas ścieżki są w LD_LIBRARY_PATH_ORIG
+                # Jeśli jej nie ma, po prostu usuwamy LD_LIBRARY_PATH
+                env["LD_LIBRARY_PATH"] = env.get("LD_LIBRARY_PATH_ORIG", "")
+
+            # Używamy xdg-open z wyczyszczonym środowiskiem
+            subprocess.run(["xdg-open", path], check=False, env=env)
+
         except OSError as exc:
             self._show_error(f"Nie udało się otworzyć pliku:\n{exc}")
 
