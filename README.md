@@ -64,6 +64,16 @@ Jeśli instalacja odbyła się przez pacmana:
 sudo pacman -Rs archive-app
 ```
 
+## Dostępna również gotowa wersja bin
+
+Wersja aplikacji automatycznie kompilowana i publikowana przy użyciu GitHub Actions. Dzięki temu proces budowania pozostaje spójny i w pełni zautomatyzowany.
+
+Poniżej link do pobrania gotowej aplikacji **bin**, wystarczy zezwolić na uruchamianie i gotowe.
+
+### Pobierz najnowszą wersję:
+
+- [Pobierz dla Linux](https://github.com/KlapkiSzatana/archive-app/releases/latest/download/archive-app-linux.bin)
+
 👤 Autor
 
 KlapkiSzatana
