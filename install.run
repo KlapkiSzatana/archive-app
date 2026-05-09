@@ -1,0 +1,71 @@
+#!/bin/bash
+
+# Kolory dla komunikatów
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+NC='\033[0m'
+
+echo "====================================================="
+echo " Instalator aplikacji: Domowe Archiwum (Home Archive)"
+echo "====================================================="
+echo ""
+
+# 1. Wymuszenie uruchomienia z sudo (instalacja globalna w /opt i /usr/share)
+if [ "$EUID" -ne 0 ]; then
+    echo -e "${RED}Instalacja wymaga uprawnień administratora (root).${NC}"
+    echo "Prosze podać hasło, aby kontynuować instalację..."
+    exec sudo bash "$0" "$@"
+    exit $?
+fi
+
+# 2. Ustalenie katalogu roboczego (folderu, w którym znajduje się skrypt)
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+cd "$SCRIPT_DIR"
+
+INSTALL_DIR="/opt/ArchiveApp"
+DESKTOP_FILE="ArchiveApp.desktop"
+SYSTEM_APPLICATIONS_DIR="/usr/share/applications"
+
+# 3. Sprawdzenie czy pliki instalacyjne istnieją w katalogu ze skryptem
+if [ ! -d "archive-app-linux" ] || [ ! -f "archive.png" ] || [ ! -f "$DESKTOP_FILE" ]; then
+    echo -e "${RED}Błąd: Brak wymaganych plików w tym katalogu!${NC}"
+    echo "Upewnij się, ze instalator 'install.run' znajduje się w tym samym folderze co:"
+    echo "  - katalog 'archive-app-linux'"
+    echo "  - plik 'archive.png'"
+    echo "  - plik 'ArchiveApp.desktop'"
+    echo "Naciśnij Enter, aby zakończyć..."
+    read -r
+    exit 1
+fi
+
+echo "-> Przygotowywanie katalogu instalacyjnego w $INSTALL_DIR..."
+mkdir -p "$INSTALL_DIR"
+# Czyszczenie poprzedniej wersji, jeśli istniała
+rm -rf "$INSTALL_DIR"/*
+
+echo "-> Kopiowanie plików aplikacji..."
+cp -r archive-app-linux "$INSTALL_DIR/"
+cp archive.png "$INSTALL_DIR/"
+cp "$DESKTOP_FILE" "$INSTALL_DIR/"
+
+# 4. Nadanie uprawnień wykonywalnych dla binarki
+echo "-> Konfigurowanie uprawnień dla programu..."
+chmod +x "$INSTALL_DIR/archive-app-linux/archive-app-linux"
+
+# 5. Kopiowanie i konfiguracja pliku .desktop w menu systemowym
+echo "-> Kopiowanie skrótu do menu aplikacji systemowych..."
+cp "$DESKTOP_FILE" "$SYSTEM_APPLICATIONS_DIR/"
+chmod 644 "$SYSTEM_APPLICATIONS_DIR/$DESKTOP_FILE"
+chmod +x "$SYSTEM_APPLICATIONS_DIR/$DESKTOP_FILE"
+
+# 6. Odświeżenie systemowej bazy skrótów
+echo "-> Odświeżanie menu aplikacji..."
+if command -v update-desktop-database &> /dev/null; then
+    update-desktop-database "$SYSTEM_APPLICATIONS_DIR"
+fi
+
+echo ""
+echo -e "${GREEN}[SUKCES] Aplikacja Domowe Archiwum została zainstalowana!${NC}"
+echo "Skrót powinien być juz widoczny w Twoim menu aplikacji."
+echo "Naciśnij Enter, aby zamknąć to okno..."
+read -r

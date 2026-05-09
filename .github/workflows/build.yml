@@ -41,6 +41,13 @@ jobs:
           mkdir -p linux-package
           cp -r dist/archive-app-linux linux-package/
           cp archive.png linux-package/
+          # Kopiujemy skrypty instalacyjne oraz plik .desktop do paczki
+          cp install.run linux-package/
+          cp uninstall.run linux-package/
+
+          # Nadajemy uprawnienia wykonywania dla instalatora i deinstalatora wewnątrz paczki
+          chmod +x linux-package/install.run
+          chmod +x linux-package/uninstall.run
 
           # Generowanie pliku .desktop (wzorowane na Twoim PKGBUILD)
           echo "[Desktop Entry]" > linux-package/ArchiveApp.desktop
@@ -48,13 +55,15 @@ jobs:
           echo "Name[pl]=Domowe Archiwum" >> linux-package/ArchiveApp.desktop
           echo "Comment=Management of home documents" >> linux-package/ArchiveApp.desktop
           echo "Comment[pl]=Zarządzanie Domowymi Dokumentami" >> linux-package/ArchiveApp.desktop
-          echo "Exec=archive-app-linux/archive-app-linux" >> linux-package/ArchiveApp.desktop
-          echo "Icon=archive" >> linux-package/ArchiveApp.desktop
+          echo "Exec=/opt/ArchiveApp/archive-app-linux/archive-app-linux" >> linux-package/ArchiveApp.desktop
+          echo "Icon=/opt/ArchiveApp/archive.png" >> linux-package/ArchiveApp.desktop
           echo "Terminal=false" >> linux-package/ArchiveApp.desktop
           echo "Type=Application" >> linux-package/ArchiveApp.desktop
           echo "Categories=Office;Utility;" >> linux-package/ArchiveApp.desktop
           echo "StartupWMClass=archive-app-linux" >> linux-package/ArchiveApp.desktop
           echo "StartupNotify=true" >> linux-package/ArchiveApp.desktop
+
+          chmod +x linux-package/ArchiveApp.desktop
 
           # Pakujemy całość do formatu .tar.gz
           tar -czf dist/ArchiveApp_linux.tar.gz linux-package
