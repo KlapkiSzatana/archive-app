@@ -37,6 +37,14 @@ jobs:
             --name "archive-app-linux" \
             archive-app.py
 
+          # USUWANIE PROBLEMATYCZNYCH BIBLIOTEK SYSTEMOWYCH
+          # 1. Usuwamy readline (rozwiązuje błąd rl_trim_arg_from_keyseq w /bin/sh)
+          rm -f dist/archive-app-linux/_internal/libreadline.so*
+
+          # 2. Usuwamy standardowe biblioteki C/C++ (rozwiązuje błąd GLIBCXX w kde-open/xdg-open)
+          rm -f dist/archive-app-linux/_internal/libstdc++.so*
+          rm -f dist/archive-app-linux/_internal/libgcc_s.so*
+
           # Przygotowujemy strukturę paczki linux-package
           mkdir -p linux-package
           cp -r dist/archive-app-linux linux-package/
