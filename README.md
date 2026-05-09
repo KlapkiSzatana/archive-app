@@ -68,11 +68,51 @@ sudo pacman -Rs archive-app
 
 Wersja aplikacji automatycznie kompilowana i publikowana przy użyciu GitHub Actions. Dzięki temu proces budowania pozostaje spójny i w pełni zautomatyzowany.
 
-Poniżej link do pobrania gotowej aplikacji **bin**, wystarczy zezwolić na uruchamianie i gotowe.
+Poniżej link do pobrania gotowej aplikacji.
 
 ### Pobierz najnowszą wersję:
 
-- [Pobierz dla Linux](https://github.com/KlapkiSzatana/archive-app/releases/latest/download/archive-app-linux)
+- [Pobierz dla Linux](https://github.com/KlapkiSzatana/archive-app/releases/latest/download/ArchiveApp_linux.tar.gz)
+
+## 🐧 Instalacja i Deinstalacja (Linux)
+
+Paczka zawiera gotowe skrypty, które automatycznie instalują aplikację w katalogu `/opt/ArchiveApp` oraz dodają skrót do systemowego menu aplikacji (dzięki czemu program jest dostępny dla wszystkich użytkowników systemu).
+
+### Wymagania
+Instalacja i deinstalacja wymagają uprawnień administratora (`sudo`). Skrypty same poproszą o podanie hasła w terminalu.
+
+---
+
+### 📥 Instrukcja Instalacji
+
+1. Pobierz i rozpakuj archiwum `ArchiveApp_linux.tar.gz`.
+2. Otwórz terminal w rozpakowanym katalogu `linux-package` i uruchom skrypt instalacyjny:
+
+```bash
+./install.run
+```
+
+3. Po zakończeniu instalacji ikona Domowe Archiwum pojawi się w Twoim menu aplikacji.
+
+### 🗑️ Instrukcja Deinstalacji
+
+Jeśli chcesz całkowicie usunąć aplikację wraz ze wszystkimi skrótami z systemu:
+
+1. Otwórz terminal w katalogu linux-package.
+
+2. Uruchom skrypt deinstalacyjny:
+
+```bash
+./uninstall.run
+```
+
+3. (Alternatywnie, możesz usunąć aplikację ręcznie, wpisując w terminalu: 
+
+```bash
+sudo rm -rf /opt/ArchiveApp /usr/share/applications/ArchiveApp.desktop && sudo update-desktop-database /usr/share/applications
+```
+
+**Enjoy!**
 
 👤 Autor
 
