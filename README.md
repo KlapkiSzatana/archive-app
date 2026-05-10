@@ -13,58 +13,109 @@ Aplikacja pozwala na wygodne zarządzanie (katalogowanie) skanami i dokumentami,
 
 ---
 
-## 🐧 Instalacja (Arch Linux i pochodne)
+# 🐧 Instalacja (Arch Linux i pochodne)
 
-Najprostszym sposobem instalacji jest użycie dołączonego pliku `PKGBUILD`.
+Aplikacja jest dostępna w AUR w dwóch wersjach.  
+Wybierz jedną z poniższych metod:
 
-### 1. Sklonuj repozytorium i przejdź do katalogu
+---
+
+### OPCJA A: Szybka instalacja – Gotowa binarka
+
+Instalujesz gotowy program.  
+Nie potrzebujesz Pythona, bibliotek ani kompilacji.
+
+Pobiera się i działa natychmiast.
+
+Jeśli używasz pomocnika AUR (`yay` lub `paru`), wpisz:
 
 ```bash
-git clone https://github.com/KlapkiSzatana/archive-app.git
-cd archive-app
-```
-
-### 2. Zbuduj i zainstaluj pakiet
-```bash
-makepkg -si
+yay -S archive-app-bin
 ```
 
 lub
 
-## Instalacja (Arch z AUR)
+```bash
+paru -S archive-app-bin
+```
 
-Aplikację można łatwo zainstalować z repozytorium **AUR (Arch User Repository)**.
+---
 
-### Szybka instalacja (zalecana)
+### OPCJA B: Instalacja ze źródeł
 
-Jeśli używasz pomocnika AUR (np. `yay` lub `paru`), wpisz w terminalu:
+Program buduje się bezpośrednio z kodu źródłowego.
+
+System automatycznie pobierze:
+- środowisko Python,
+- PySide6,
+- Pillow,
+- oraz wszystkie wymagane zależności.
+
+Jeśli używasz pomocnika AUR (`yay` lub `paru`), wpisz:
 
 ```bash
 yay -S archive-app
 ```
+
 lub
+
 ```bash
 paru -S archive-app
 ```
 
+---
+
+### OPCJA C: Ręczna instalacja przez PKGBUILD (Bez pomocników AUR)
+
+Jeśli nie używasz `yay` ani `paru`, możesz pobrać paczkę ręcznie i zbudować ją przez `makepkg`.
+
+### Wersja binarna
+
+```bash
+git clone https://aur.archlinux.org/archive-app-bin.git
+cd archive-app-bin
+makepkg -si
+```
+
+### Wersja ze źródła
+
+```bash
+git clone https://aur.archlinux.org/archive-app.git
+cd archive-app
+makepkg -si
+```
+
+---
+
 ## 🚀 Uruchamianie
 
-Po instalacji aplikację możesz uruchomić:
+Po instalacji (niezależnie od wybranej opcji) aplikację uruchamiasz wpisując:
+
 ```bash
 archive-app
 ```
 
-Lub znaleźć ją w menu aplikacji jako Domowe Archiwum.
+Możesz także uruchomić ją z menu aplikacji swojego środowiska graficznego.
+
+---
 
 ## 🗑️ Odinstalowanie
 
-Jeśli instalacja odbyła się przez pacmana:
+Aby całkowicie usunąć aplikację z systemu:
+
+### Wersja binarna (`-bin`)
+
+```bash
+sudo pacman -Rs archive-app-bin
+```
+
+### Wersja ze źródła
 
 ```bash
 sudo pacman -Rs archive-app
 ```
 
-## Dostępna również gotowa wersja bin
+# Dostępna również gotowa wersja bin
 
 Wersja aplikacji automatycznie kompilowana i publikowana przy użyciu GitHub Actions. Dzięki temu proces budowania pozostaje spójny i w pełni zautomatyzowany.
 
