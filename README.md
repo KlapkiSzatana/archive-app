@@ -5,6 +5,8 @@ Aplikacja pozwala na wygodne zarządzanie (katalogowanie) skanami i dokumentami,
 
 ---
 
+## [Changelog](CHANGELOG.md)
+
 ## ⚙️ Wymagania
 
 - Python  
