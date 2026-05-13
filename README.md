@@ -7,6 +7,10 @@ Aplikacja pozwala na wygodne zarządzanie (katalogowanie) skanami i dokumentami,
 
 ## [Changelog](CHANGELOG.md)
 
+## Budowa ze źródeł
+
+Pełna instrukcja budowy lokalnej wersji developerskiej, binarki Linux oraz paczek `.deb` i `.rpm` znajduje się w [BUILD_FROM_SOURCE.md](BUILD_FROM_SOURCE.md).
+
 ## ⚙️ Wymagania
 
 - Python  
