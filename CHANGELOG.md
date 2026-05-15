@@ -10,23 +10,23 @@ Format oparty o standard:
 
 ---
 
-# [1.3.0] - Planned
+# [1.3.0](https://github.com/KlapkiSzatana/archive-app/releases/tag/v1.3.0) - 2026-05-15
 
 ## ✨ Added
-- Planowane dodanie wyświetlania rozmiaru poszczególnych katalogów
-- Planowane dodanie możliwości importowania całych katalogów wraz z zawartością
+- Dodanie wyświetlania rozmiaru poszczególnych katalogów
+- Dodanie możliwości importowania całych katalogów wraz z zawartością
 
 ## 🔄 Changed
-- Planowane ulepszenie sposobu prezentacji danych w aplikacji
-- Planowane usprawnienia procesu dodawania oraz organizacji archiwów
-- Planowana poprawa wygody pracy z dużą ilością plików
+- Ulepszenie sposobu prezentacji danych w aplikacji
+- Usprawnienia procesu dodawania oraz organizacji archiwów
+- Poprawa wygody pracy z dużą ilością plików
 
 ## 🛠 Fixed
-- Planowane poprawki stabilności podczas pracy z większymi katalogami
-- Planowane poprawki obsługi wybranych operacji na plikach
+- Poprawki stabilności podczas pracy z większymi katalogami
+- Poprawki obsługi wybranych operacji na plikach
 
 ## 🧹 Technical
-- Planowane porządki i optymalizacje kodu aplikacji
+- Porządki i optymalizacje kodu aplikacji
 - Przygotowanie aplikacji pod dalszy rozwój funkcji archiwizacji
 
 ---

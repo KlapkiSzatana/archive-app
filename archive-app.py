@@ -24,6 +24,8 @@ from PySide6.QtCore import (
     QModelIndex,
 )
 from PySide6.QtGui import (
+    QBrush,
+    QColor,
     QFont,
     QFontDatabase,
     QIcon,
@@ -35,6 +37,8 @@ from PySide6.QtGui import (
 from PySide6.QtPdf import QPdfDocument
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
+    QComboBox,
     QDateEdit,
     QDialog,
     QDialogButtonBox,
@@ -42,7 +46,6 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
-    QInputDialog,
     QLabel,
     QLineEdit,
     QMainWindow,
@@ -54,6 +57,9 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QSplitter,
     QStackedWidget,
+    QStyle,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
     QTextEdit,
     QTreeView,
     QVBoxLayout,
@@ -62,8 +68,25 @@ from PySide6.QtWidgets import (
 
 from logic import ArchiveLogic
 
-APP_VERSION = "1.2.1"
+APP_VERSION = "1.3.0"
 COPYRIGHT = "KlapkiSzatana"
+PASTEL_FOLDER_COLORS = [
+    ("Bez koloru", ""),
+    ("Turkusowy", "#58D6C3"),
+    ("Koralowy", "#FF8E72"),
+    ("Jagodowy", "#8F9BFF"),
+    ("Złoty", "#E9C94F"),
+    ("Malinowy", "#FF6FA0"),
+    ("Szmaragdowy", "#4FCB8D"),
+    ("Śliwkowy", "#A774FF"),
+    ("Morski", "#4DB8FF"),
+    ("Bursztynowy", "#FFB347"),
+    ("Limonkowy", "#9FD356"),
+]
+PASTEL_FOLDER_COLOR_NAMES = {
+    value: label for label, value in PASTEL_FOLDER_COLORS if value
+}
+DEFAULT_NEW_FOLDER_COLOR = PASTEL_FOLDER_COLORS[1][1]
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff", ".webp", ".svg"}
 TEXT_EXTENSIONS = {
     ".txt",
@@ -112,6 +135,140 @@ ARCHIVE_EXTENSIONS = {
 }
 MAX_TEXT_PREVIEW_BYTES = 1024 * 1024
 ARCHIVE_ENTRY_LIMIT = 300
+
+
+class FolderDialog(QDialog):
+    """Zbiera nazwę folderu, kolor oraz flagę ważności."""
+
+    def __init__(self, parent, title, name="", color=None, important=False, default_color=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setMinimumWidth(380)
+
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+
+        self.name_edit = QLineEdit(name)
+        form.addRow("Nazwa:", self.name_edit)
+
+        self.color_combo = QComboBox()
+        for label, value in PASTEL_FOLDER_COLORS:
+            self.color_combo.addItem(label, value)
+            index = self.color_combo.count() - 1
+            if value:
+                self.color_combo.setItemData(index, QColor(value), Qt.BackgroundRole)
+                self.color_combo.setItemData(index, QColor("#2D2A26"), Qt.ForegroundRole)
+
+        selected_color = color if color is not None else (default_color or "")
+        color_index = self.color_combo.findData(selected_color)
+        if color_index >= 0:
+            self.color_combo.setCurrentIndex(color_index)
+        form.addRow("Kolor:", self.color_combo)
+
+        self.important_check = QCheckBox("Oznacz jako ważny")
+        self.important_check.setChecked(bool(important))
+        form.addRow("Ważne:", self.important_check)
+
+        layout.addLayout(form)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def folder_data(self):
+        """Zwraca dane wpisane w formularzu folderu."""
+        return {
+            "name": self.name_edit.text().strip(),
+            "color": self.color_combo.currentData(),
+            "important": self.important_check.isChecked(),
+        }
+
+
+class DocumentDialog(QDialog):
+    """Zbiera metadane dokumentu, w tym flagę ważności."""
+
+    def __init__(
+        self,
+        parent,
+        title,
+        document_title="",
+        description="",
+        document_date=None,
+        important=False,
+    ):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setMinimumWidth(460)
+
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+
+        self.title_edit = QLineEdit(document_title)
+        form.addRow("Tytuł:", self.title_edit)
+
+        self.date_edit = QDateEdit(calendarPopup=True)
+        self.date_edit.setDate(document_date or QDate.currentDate())
+        form.addRow("Data:", self.date_edit)
+
+        self.description_edit = QPlainTextEdit(description)
+        self.description_edit.setMinimumHeight(120)
+        form.addRow("Opis:", self.description_edit)
+
+        self.important_check = QCheckBox("Oznacz jako ważny")
+        self.important_check.setChecked(bool(important))
+        form.addRow("Ważne:", self.important_check)
+
+        layout.addLayout(form)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def document_data(self):
+        """Zwraca dane wpisane w formularzu dokumentu."""
+        return {
+            "title": self.title_edit.text().strip(),
+            "date": self.date_edit.date().toString("yyyy-MM-dd"),
+            "description": self.description_edit.toPlainText().strip(),
+            "important": self.important_check.isChecked(),
+        }
+
+
+class ArchiveItemDelegate(QStyledItemDelegate):
+    """Rysuje czerwony znacznik dla elementów oznaczonych jako ważne."""
+
+    def paint(self, painter, option, index):
+        data = index.data(Qt.UserRole) or {}
+        important = bool(data.get("important"))
+
+        option_copy = QStyleOptionViewItem(option)
+        if important:
+            option_copy.rect = option_copy.rect.adjusted(18, 0, 0, 0)
+
+            background_data = index.data(Qt.BackgroundRole)
+            if option.state & QStyle.State_Selected:
+                painter.fillRect(option.rect.adjusted(0, 0, -option.rect.width() + 18, 0), option.palette.highlight())
+            elif isinstance(background_data, QBrush):
+                painter.fillRect(option.rect.adjusted(0, 0, -option.rect.width() + 18, 0), background_data)
+
+        super().paint(painter, option_copy, index)
+
+        if not important:
+            return
+
+        marker_rect = option.rect.adjusted(4, 0, 0, 0)
+        marker_rect.setWidth(14)
+
+        painter.save()
+        font = painter.font()
+        font.setBold(True)
+        font.setPointSize(font.pointSize() + 1)
+        painter.setFont(font)
+        painter.setPen(QColor("#C62828"))
+        painter.drawText(marker_rect, Qt.AlignCenter, "!")
+        painter.restore()
 
 
 class ProcessingDialog(QDialog):
@@ -1053,6 +1210,12 @@ class ApplicationMenu(QObject):
         act_add_file.triggered.connect(self.window.action_add_file)
         edit_menu.addAction(act_add_file)
 
+        # --- DODANA NOWA OPCJA DLA KATALOGU ---
+        act_add_dir = QAction("📁 Dodaj katalog", self.window)
+        act_add_dir.setShortcut(QKeySequence("Ctrl+Shift+D"))
+        act_add_dir.triggered.connect(self.window.on_add_directory)
+        edit_menu.addAction(act_add_dir)
+
         edit_menu.addSeparator()
 
         act_edit = QAction("✏️ Edytuj", self.window)
@@ -1158,6 +1321,7 @@ class DomoweArchiwum(QMainWindow):
 
         self.model = ArchiveModel(self.logic, self)
         self.tree_view.setModel(self.model)
+        self.tree_view.setItemDelegate(ArchiveItemDelegate(self.tree_view))
         self.tree_view.expanded.connect(self._sync_expanded_state)
         self.tree_view.collapsed.connect(self._sync_expanded_state)
         self.tree_view.setEditTriggers(QTreeView.NoEditTriggers)
@@ -1281,6 +1445,29 @@ class DomoweArchiwum(QMainWindow):
         button.setFixedSize(45, 30)
         return button
 
+    @staticmethod
+    def _stable_item_data(data):
+        """Zwraca stabilny identyfikator elementu do odtworzenia zaznaczenia."""
+        if not data:
+            return None
+        return {"id": data.get("id"), "type": data.get("type")}
+
+    @staticmethod
+    def _apply_folder_item_style(item, color_value):
+        """Nadaje folderowi pastelowe tło, jeśli wybrano kolor."""
+        if not color_value:
+            return
+
+        item.setBackground(QBrush(QColor(color_value)))
+        item.setForeground(QBrush(QColor("#2D2A26")))
+
+    @staticmethod
+    def _folder_color_label(color_value):
+        """Zwraca czytelną etykietę dla zapisanego kodu koloru folderu."""
+        if not color_value:
+            return "Bez koloru"
+        return PASTEL_FOLDER_COLOR_NAMES.get(color_value, color_value)
+
     def toggle_delete_lock(self):
         """Przełącza blokadę operacji usuwania w interfejsie."""
         self.delete_unlocked = not self.delete_unlocked
@@ -1299,12 +1486,52 @@ class DomoweArchiwum(QMainWindow):
         values = raw_expanded if isinstance(raw_expanded, list) else [raw_expanded]
         return [int(value) for value in values if str(value).isdigit()]
 
+    def get_folder_details(self, folder_id):
+        """Zwraca liczbę podkatalogów, liczbę dokumentów i łączny rozmiar dla wskazanego folderu i jego podfolderów."""
+        with sqlite3.connect(self.logic.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+
+            # Zliczamy bezpośrednie podkatalogi
+            subfolders = conn.execute(
+                "SELECT count(*) FROM foldery WHERE id_rodzica = ?",
+                (folder_id,)
+            ).fetchone()[0]
+
+            # Zliczamy dokumenty w tym folderze i jego podfolderach rekurencyjnie
+            query = """
+            WITH RECURSIVE
+            folders(id) AS (
+                SELECT ?
+                UNION
+                SELECT f.id FROM foldery f JOIN folders fd ON f.id_rodzica = fd.id
+            )
+            SELECT d.sciezka_fizyczna
+            FROM dokumenty d
+            WHERE d.folder_id IN (SELECT id FROM folders)
+            """
+
+            docs = conn.execute(query, (folder_id,)).fetchall()
+            count = len(docs)
+
+            total_size = 0
+            for d in docs:
+                path = os.path.join(self.archive_path, d["sciezka_fizyczna"])
+                if os.path.exists(path):
+                    total_size += os.path.getsize(path)
+
+        return subfolders, count, _format_file_size(total_size)
+
     def _find_index_recursive(self, parent_idx, target_data):
         """Pomocnicza metoda do odnalezienia wskaźnika w zrekonstruowanym drzewie."""
         for row in range(self.model.rowCount(parent_idx)):
             idx = self.model.index(row, 0, parent_idx)
             data = idx.data(Qt.UserRole)
-            if data and data == target_data:
+            if (
+                data
+                and target_data
+                and data.get("id") == target_data.get("id")
+                and data.get("type") == target_data.get("type")
+            ):
                 return idx
             if self.model.rowCount(idx) > 0:
                 found = self._find_index_recursive(idx, target_data)
@@ -1312,13 +1539,25 @@ class DomoweArchiwum(QMainWindow):
                     return found
         return QModelIndex()
 
+    def _oblicz_rozmiar_dokumentow(self, dokumenty):
+        """Wylicza sumaryczną wielkość listy dokumentów na dysku."""
+        total_bytes = 0
+        for doc in dokumenty:
+            path = os.path.join(self.archive_path, doc["sciezka_fizyczna"])
+            if os.path.exists(path):
+                total_bytes += os.path.getsize(path)
+        return _format_file_size(total_bytes)
+
     def odswiez_drzewo(self):
         """Odbudowuje drzewo folderów i dokumentów na podstawie stanu bazy."""
         filtr = self.search_in.text().lower().strip()
 
-        # --- ZAPISANIE AKTUALNEGO ZAZNACZENIA PRZED WYCZYSZCZENIEM ---
         current_idx = self.tree_view.currentIndex()
-        current_data = current_idx.data(Qt.UserRole) if current_idx.isValid() else None
+        current_data = (
+            self._stable_item_data(current_idx.data(Qt.UserRole))
+            if current_idx.isValid()
+            else None
+        )
 
         self.model.clear()
         self.model.setHorizontalHeaderLabels(["Struktura Archiwum"])
@@ -1341,7 +1580,17 @@ class DomoweArchiwum(QMainWindow):
         for folder in foldery:
             item = QStandardItem(f"📁 {folder['nazwa']}")
             item.setFont(font_root if folder["id_rodzica"] is None else font_sub)
-            item.setData({"id": folder["id"], "type": "folder"}, Qt.UserRole)
+            item.setData(
+                {
+                    "id": folder["id"],
+                    "type": "folder",
+                    "name": folder["nazwa"],
+                    "color": folder["kolor"],
+                    "important": bool(folder["wazne"]),
+                },
+                Qt.UserRole,
+            )
+            self._apply_folder_item_style(item, folder["kolor"])
             item_map[folder["id"]] = item
 
         for folder in foldery:
@@ -1366,8 +1615,10 @@ class DomoweArchiwum(QMainWindow):
                     "id": dokument["id"],
                     "type": "doc",
                     "path": dokument["sciezka_fizyczna"],
-                    "info": dokument["opis"],
+                    "info": dokument["opis"] or "",
                     "date": dokument["data_dok"],
+                    "title": dokument["tytul"] or "",
+                    "important": bool(dokument["wazne"]),
                 },
                 Qt.UserRole,
             )
@@ -1383,8 +1634,6 @@ class DomoweArchiwum(QMainWindow):
                 self._select_matching_items(self.model.invisibleRootItem(), filtr, selection_model)
         else:
             self._restore_expanded_state(self._get_saved_expanded_ids())
-
-            # --- PRZYWRÓCENIE ZAZNACZENIA I WIDOKU ---
             if current_data:
                 idx = self._find_index_recursive(QModelIndex(), current_data)
                 if idx.isValid():
@@ -1392,8 +1641,9 @@ class DomoweArchiwum(QMainWindow):
                     self.tree_view.scrollTo(idx)
 
         self.btn_delete.setEnabled(self.delete_unlocked)
-        prefix = "Znaleziono" if filtr else "Dokumentów"
-        self.filter_summary_label.setText(f"{prefix}: {len(dokumenty)}")
+        prefix = "Znaleziono" if filtr else "Łącznie Dokumentów"
+        rozmiar_str = self._oblicz_rozmiar_dokumentow(dokumenty)
+        self.filter_summary_label.setText(f"{prefix}: {len(dokumenty)} | Łączne miejsce: {rozmiar_str}")
 
     def _select_matching_items(self, parent_item, filtr, selection_model):
         """Rekurencyjnie zaznacza dokumenty pasujące do aktywnego filtra."""
@@ -1492,25 +1742,28 @@ class DomoweArchiwum(QMainWindow):
             return
 
         suggested_title = os.path.splitext(os.path.basename(path))[0]
-        title, ok = QInputDialog.getText(
+        dialog = DocumentDialog(
             self,
-            "Tytuł",
-            "Tytuł dokumentu:",
-            text=suggested_title,
+            "Nowy dokument",
+            document_title=suggested_title,
         )
-        if not ok or not title:
+        if dialog.exec() != QDialog.Accepted:
             return
 
-        selected_date = self._prompt_for_document_date("Data dokumentu")
-        if not selected_date:
-            return
-
-        description, ok = QInputDialog.getMultiLineText(self, "Opis", "Dodaj notatkę:")
-        if not ok:
+        document_data = dialog.document_data()
+        if not document_data["title"]:
+            self._show_error("Tytuł dokumentu nie może być pusty.")
             return
 
         try:
-            self.logic.dodaj_dokument(path, title, description, selected_date, folder_id)
+            self.logic.dodaj_dokument(
+                path,
+                document_data["title"],
+                document_data["description"],
+                document_data["date"],
+                folder_id,
+                wazne=document_data["important"],
+            )
         except (OSError, ValueError) as exc:
             self._show_error(str(exc))
             return
@@ -1529,13 +1782,33 @@ class DomoweArchiwum(QMainWindow):
 
         data = idx.data(Qt.UserRole)
         if data["type"] == "folder":
-            current_name = idx.data().replace("📁 ", "", 1)
-            new_name, ok = QInputDialog.getText(self, "Zmiana", "Nazwa:", text=current_name)
-            if not ok or not new_name:
+            folder = self.logic.pobierz_folder(data["id"])
+            if folder is None:
+                self._show_error("Nie znaleziono folderu.")
+                return
+
+            dialog = FolderDialog(
+                self,
+                "Edycja folderu",
+                name=folder["nazwa"] or "",
+                color=folder["kolor"],
+                important=bool(folder["wazne"]),
+            )
+            if dialog.exec() != QDialog.Accepted:
+                return
+
+            folder_data = dialog.folder_data()
+            if not folder_data["name"]:
+                self._show_error("Nazwa folderu nie może być pusta.")
                 return
 
             try:
-                self.logic.zmien_nazwe_folderu(data["id"], new_name)
+                self.logic.aktualizuj_folder(
+                    data["id"],
+                    folder_data["name"],
+                    folder_data["color"],
+                    folder_data["important"],
+                )
             except (FileExistsError, OSError, ValueError) as exc:
                 self._show_error(str(exc))
                 return
@@ -1543,48 +1816,46 @@ class DomoweArchiwum(QMainWindow):
             self.odswiez_drzewo()
             return
 
-        with sqlite3.connect(self.logic.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            row = conn.execute(
-                "SELECT tytul, opis, data_dok FROM dokumenty WHERE id = ?",
-                (data["id"],),
-            ).fetchone()
-
+        row = self.logic.pobierz_dokument(data["id"])
         if row is None:
             self._show_error("Nie znaleziono dokumentu.")
             return
 
         current_title = row["tytul"] or ""
         current_description = row["opis"] or ""
-        current_date = QDate.fromString(row["data_dok"], "yyyy-MM-dd")
+        current_date = QDate.fromString(row["data_dok"] or "", "yyyy-MM-dd")
         if not current_date.isValid():
             current_date = QDate.currentDate()
 
-        title, ok = QInputDialog.getText(self, "Zmiana", "Tytuł:", text=current_title)
-        if not ok or not title:
-            return
-
-        selected_date = self._prompt_for_document_date("Data dokumentu", current_date)
-        if not selected_date:
-            return
-
-        description, ok = QInputDialog.getMultiLineText(
+        dialog = DocumentDialog(
             self,
-            "Opis",
-            "Opis:",
-            text=current_description,
+            "Edycja dokumentu",
+            document_title=current_title,
+            description=current_description,
+            document_date=current_date,
+            important=bool(row["wazne"]),
         )
-        if not ok:
+        if dialog.exec() != QDialog.Accepted:
             return
 
-        with sqlite3.connect(self.logic.db_path) as conn:
-            conn.execute(
-                "UPDATE dokumenty SET tytul = ?, opis = ?, data_dok = ? WHERE id = ?",
-                (title, description, selected_date, data["id"]),
-            )
-            conn.commit()
+        document_data = dialog.document_data()
+        if not document_data["title"]:
+            self._show_error("Tytuł dokumentu nie może być pusty.")
+            return
 
-        if not self.logic.zmien_nazwe_pliku_fizycznie(data["id"], title, selected_date):
+        try:
+            renamed = self.logic.aktualizuj_dokument(
+                data["id"],
+                document_data["title"],
+                document_data["description"],
+                document_data["date"],
+                document_data["important"],
+            )
+        except (OSError, ValueError) as exc:
+            self._show_error(str(exc))
+            return
+
+        if not renamed:
             QMessageBox.warning(
                 self,
                 "Uwaga",
@@ -1596,15 +1867,46 @@ class DomoweArchiwum(QMainWindow):
     def on_item_clicked(self, idx):
         """Aktualizuje opis dokumentu i panel podglądu po kliknięciu w drzewie."""
         data = idx.data(Qt.UserRole)
-        if not data or data["type"] != "doc":
+        if not data:
             self.info_box.clear()
             self.preview.show_folder()
             return
 
-        self.info_box.setText(f"Tytuł: {idx.data().split('] ', 1)[-1]}\n\nOpis: {data['info']}")
+        if data["type"] == "folder":
+            folder_id = data["id"]
+            subfolders, count, size_str = self.get_folder_details(folder_id)
+            folder_name = data.get("name", "")
 
-        path = os.path.join(self.archive_path, data["path"])
-        self.preview.preview_file(path)
+            self.info_box.setText(
+                f"Katalog: {folder_name}\n\n"
+                f"Kolor: {self._folder_color_label(data.get('color'))}\n"
+                f"Ważne: {'Tak' if data.get('important') else 'Nie'}\n"
+                f"Liczba podkatalogów: {subfolders}\n"
+                f"Liczba dokumentów: {count}\n"
+                f"Zajmowane miejsce: {size_str}"
+            )
+            self.preview.show_folder()
+            return
+
+        if data["type"] == "doc":
+            path = os.path.join(self.archive_path, data["path"])
+            size_str = "Brak pliku"
+            mime_type = "Nieznany"
+
+            if os.path.exists(path):
+                size_str = _format_file_size(os.path.getsize(path))
+                mime_type, _ = mimetypes.guess_type(path)
+                if not mime_type:
+                    ext = os.path.splitext(path)[1]
+                    mime_type = ext if ext else "Nieznany"
+
+            self.info_box.setText(
+                f"Tytuł: {data.get('title', '')}\n\n"
+                f"Ważne: {'Tak' if data.get('important') else 'Nie'}\n\n"
+                f"Opis: {data['info']}\n\n"
+                f"Rozmiar: {size_str} | Format: {mime_type}"
+            )
+            self.preview.preview_file(path)
 
     def otworz_zewnetrznie(self, idx):
         """Otwiera dokument w domyślnej aplikacji systemowej, czyszcząc środowisko PyInstallera."""
@@ -1618,19 +1920,11 @@ class DomoweArchiwum(QMainWindow):
         if not os.path.exists(path):
             self._show_error("Plik nie istnieje.")
             return
-
         try:
-            # Tworzymy kopię obecnego środowiska
             env = os.environ.copy()
-
-            # Usuwamy LD_LIBRARY_PATH, aby systemowe narzędzia używały bibliotek systemowych
-            # a nie tych spakowanych w binarce PyInstallera
             if "LD_LIBRARY_PATH" in env:
-                # W przypadku PyInstallera interesujące nas ścieżki są w LD_LIBRARY_PATH_ORIG
-                # Jeśli jej nie ma, po prostu usuwamy LD_LIBRARY_PATH
                 env["LD_LIBRARY_PATH"] = env.get("LD_LIBRARY_PATH_ORIG", "")
 
-            # Używamy xdg-open z wyczyszczonym środowiskiem
             subprocess.run(["xdg-open", path], check=False, env=env)
 
         except OSError as exc:
@@ -1639,14 +1933,19 @@ class DomoweArchiwum(QMainWindow):
     def action_new_sub(self):
         """Dodaje podfolder do aktualnie zaznaczonego folderu."""
         idx = self.tree_view.currentIndex()
-        if idx.isValid() and idx.data(Qt.UserRole)["type"] == "folder":
-            self.on_add_folder(idx)
+        if not idx.isValid() or idx.data(Qt.UserRole)["type"] != "folder":
+            self._show_error("Zaznacz najpierw gdzie dodać")
+            return
+        self.on_add_folder(idx)
 
     def action_add_file(self):
         """Dodaje plik do aktualnie zaznaczonego folderu."""
         idx = self.tree_view.currentIndex()
-        if idx.isValid() and idx.data(Qt.UserRole)["type"] == "folder":
-            self.on_add_doc(idx)
+        if not idx.isValid() or idx.data(Qt.UserRole)["type"] != "folder":
+            self._show_error("Zaznacz najpierw gdzie dodać")
+            return
+        self.on_add_doc(idx)
+
 
     def action_edit(self):
         """Uruchamia edycję aktualnie zaznaczonego elementu."""
@@ -1673,6 +1972,7 @@ class DomoweArchiwum(QMainWindow):
             if data["type"] == "folder":
                 menu.addAction("📂 Nowy Podfolder", lambda: self.on_add_folder(idx))
                 menu.addAction("📄 Dodaj Plik", lambda: self.on_add_doc(idx))
+                menu.addAction("📁 Dodaj katalog z plikami", lambda: self.on_add_directory(idx))
                 menu.addAction("✏️ Zmień nazwę", lambda: self.on_rename(idx))
             else:
                 menu.addAction("📂 Otwórz", lambda: self.otworz_zewnetrznie(idx))
@@ -1687,16 +1987,107 @@ class DomoweArchiwum(QMainWindow):
 
     def on_add_folder(self, parent_idx=None):
         """Dodaje folder główny lub podfolder do zaznaczonego miejsca."""
-        name, ok = QInputDialog.getText(self, "Folder", "Nazwa:")
-        if not ok or not name:
+        dialog = FolderDialog(
+            self,
+            "Nowy folder",
+            default_color=DEFAULT_NEW_FOLDER_COLOR,
+        )
+        if dialog.exec() != QDialog.Accepted:
+            return
+
+        folder_data = dialog.folder_data()
+        if not folder_data["name"]:
+            self._show_error("Nazwa folderu nie może być pusta.")
             return
 
         parent_id = parent_idx.data(Qt.UserRole)["id"] if parent_idx else None
         try:
-            self.logic.dodaj_folder(name, parent_id)
+            self.logic.dodaj_folder(
+                folder_data["name"],
+                parent_id,
+                kolor=folder_data["color"],
+                wazne=folder_data["important"],
+            )
         except (OSError, ValueError) as exc:
             self._show_error(str(exc))
             return
+
+        self.odswiez_drzewo()
+
+    def on_add_directory(self, folder_idx=None):
+        """Dodaje cały katalog wraz z zawartymi w nim plikami do wskazanego folderu z paskiem postępu."""
+        # Jeśli przekazano wartość logiczną (np. z menu) lub indeks jest nieprawidłowy, pobierz zaznaczenie z widoku
+        if folder_idx is None or isinstance(folder_idx, bool) or not folder_idx.isValid():
+            folder_idx = self.tree_view.currentIndex()
+
+        if not folder_idx.isValid() or folder_idx.data(Qt.UserRole)["type"] != "folder":
+            self._show_error("Zaznacz najpierw gdzie dodać")
+            return
+
+        folder_data = folder_idx.data(Qt.UserRole)
+        folder_id = int(folder_data["id"])
+
+        directory_path = QFileDialog.getExistingDirectory(self, "Wybierz katalog do dodania")
+        if not directory_path:
+            return
+
+        folder_dialog = FolderDialog(
+            self,
+            "Parametry importowanego folderu",
+            name=os.path.basename(directory_path),
+            default_color=DEFAULT_NEW_FOLDER_COLOR,
+        )
+        if folder_dialog.exec() != QDialog.Accepted:
+            return
+
+        folder_form_data = folder_dialog.folder_data()
+        if not folder_form_data["name"]:
+            self._show_error("Nazwa folderu nie może być pusta.")
+            return
+
+        selected_date = self._prompt_for_document_date("Data dla dokumentów w katalogu")
+        if not selected_date:
+            return
+
+        # Utworzenie i wyświetlenie okna dialogowego postępu
+        dialog = ProcessingDialog(self, "Import", "Dodawanie katalogu i plików...")
+        dialog.show()
+
+        try:
+            new_folder_id = self.logic.dodaj_folder(
+                folder_form_data["name"],
+                folder_id,
+                kolor=folder_form_data["color"],
+                wazne=folder_form_data["important"],
+            )
+
+            files = [f for f in os.listdir(directory_path) if os.path.isfile(os.path.join(directory_path, f))]
+
+            # Konfiguracja paska postępu
+            dialog.pbar.setMaximum(len(files))
+            dialog.pbar.setValue(0)
+
+            for i, f in enumerate(files):
+                file_path = os.path.join(directory_path, f)
+                title = os.path.splitext(f)[0]
+                description = ""
+                self.logic.dodaj_dokument(file_path, title, description, selected_date, new_folder_id)
+
+                # Aktualizacja paska postępu oraz odświeżenie GUI
+                dialog.pbar.setValue(i + 1)
+                QApplication.processEvents()
+
+            dialog.close()
+
+        except (OSError, ValueError, Exception) as exc:
+            dialog.close()
+            self._show_error(str(exc))
+            return
+
+        expanded = self._get_saved_expanded_ids()
+        if folder_id not in expanded:
+            expanded.append(folder_id)
+            self.settings.setValue("expanded_folders", expanded)
 
         self.odswiez_drzewo()
 

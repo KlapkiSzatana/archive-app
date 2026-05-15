@@ -48,6 +48,29 @@ class ArchiveLogic:
                 )
                 """
             )
+            self._ensure_column(conn, "foldery", "kolor", "TEXT")
+            self._ensure_column(conn, "foldery", "wazne", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(conn, "dokumenty", "wazne", "INTEGER NOT NULL DEFAULT 0")
+            conn.commit()
+
+    def _ensure_column(self, conn, table_name, column_name, column_definition):
+        """Dodaje brakującą kolumnę do istniejącej tabeli podczas migracji."""
+        columns = {
+            row[1]
+            for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+        }
+        if column_name in columns:
+            return
+
+        conn.execute(
+            f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}"
+        )
+
+    @staticmethod
+    def _normalize_color(kolor):
+        """Zamienia puste wartości koloru na `None` dla spójnego zapisu w bazie."""
+        kolor = (kolor or "").strip()
+        return kolor or None
 
     def _folder_name_exists(self, conn, nazwa, id_rodzica, exclude_id=None):
         """Sprawdza, czy w danym poziomie istnieje już folder o tej nazwie."""
@@ -104,9 +127,11 @@ class ArchiveLogic:
                 return kandydat
             licznik += 1
 
-    def dodaj_folder(self, nazwa, id_rodzica=None):
+    def dodaj_folder(self, nazwa, id_rodzica=None, kolor=None, wazne=False):
         """Dodaje folder do bazy oraz tworzy odpowiadający mu katalog na dysku."""
         nazwa = self._validate_folder_name(nazwa)
+        kolor = self._normalize_color(kolor)
+        wazne = int(bool(wazne))
 
         with self._connect() as conn:
             if self._folder_name_exists(conn, nazwa, id_rodzica):
@@ -114,8 +139,8 @@ class ArchiveLogic:
 
             cursor = conn.cursor()
             cursor.execute(
-                "INSERT INTO foldery (nazwa, id_rodzica) VALUES (?, ?)",
-                (nazwa, id_rodzica),
+                "INSERT INTO foldery (nazwa, id_rodzica, kolor, wazne) VALUES (?, ?, ?, ?)",
+                (nazwa, id_rodzica, kolor, wazne),
             )
             nowy_id = cursor.lastrowid
             sciezka_rel = self._get_physical_path(nowy_id, conn)
@@ -155,12 +180,13 @@ class ArchiveLogic:
             conn.row_factory = sqlite3.Row
             return conn.execute(query, params).fetchall()
 
-    def dodaj_dokument(self, sciezka_zrodlowa, tytul, opis, data_str, folder_id):
+    def dodaj_dokument(self, sciezka_zrodlowa, tytul, opis, data_str, folder_id, wazne=False):
         """Kopiuje dokument do archiwum i zapisuje jego metadane w bazie."""
         if folder_id is None or not self._folder_exists(folder_id):
             raise ValueError("Wybrany folder nie istnieje.")
         if not os.path.isfile(sciezka_zrodlowa):
             raise FileNotFoundError("Nie znaleziono wskazanego pliku źródłowego.")
+        wazne = int(bool(wazne))
 
         folder_rel = self._get_physical_path(folder_id)
         katalog_docelowy = os.path.join(self.storage_dir, folder_rel)
@@ -175,10 +201,10 @@ class ArchiveLogic:
             with self._connect() as conn:
                 conn.execute(
                     """
-                    INSERT INTO dokumenty (tytul, opis, data_dok, sciezka_fizyczna, folder_id)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO dokumenty (tytul, opis, data_dok, sciezka_fizyczna, folder_id, wazne)
+                    VALUES (?, ?, ?, ?, ?, ?)
                     """,
-                    (tytul, opis, data_str, rel_path, folder_id),
+                    (tytul, opis, data_str, rel_path, folder_id, wazne),
                 )
                 conn.commit()
         except Exception:
@@ -461,9 +487,29 @@ class ArchiveLogic:
             if temp_dir:
                 shutil.rmtree(temp_dir, ignore_errors=True)
 
-    def zmien_nazwe_folderu(self, folder_id, nowa_nazwa):
-        """Zmienia nazwę folderu, przenosi katalog i aktualizuje ścieżki dokumentów."""
+    def pobierz_folder(self, folder_id):
+        """Zwraca pojedynczy folder jako wiersz SQLite lub `None`."""
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            return conn.execute(
+                "SELECT * FROM foldery WHERE id = ?",
+                (folder_id,),
+            ).fetchone()
+
+    def pobierz_dokument(self, doc_id):
+        """Zwraca pojedynczy dokument jako wiersz SQLite lub `None`."""
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            return conn.execute(
+                "SELECT * FROM dokumenty WHERE id = ?",
+                (doc_id,),
+            ).fetchone()
+
+    def aktualizuj_folder(self, folder_id, nowa_nazwa, kolor=None, wazne=False):
+        """Zmienia metadane folderu, przenosi katalog i aktualizuje ścieżki dokumentów."""
         nowa_nazwa = self._validate_folder_name(nowa_nazwa)
+        kolor = self._normalize_color(kolor)
+        wazne = int(bool(wazne))
 
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
@@ -473,15 +519,16 @@ class ArchiveLogic:
             ).fetchone()
             if folder is None:
                 raise ValueError("Folder nie istnieje.")
-            if folder["nazwa"] == nowa_nazwa:
-                return
             if self._folder_name_exists(conn, nowa_nazwa, folder["id_rodzica"], exclude_id=folder_id):
                 raise ValueError("Folder o tej nazwie już istnieje w wybranej lokalizacji.")
 
             stara_relatywna = self._get_physical_path(folder_id, conn)
             stara_full = os.path.join(self.storage_dir, stara_relatywna)
 
-            conn.execute("UPDATE foldery SET nazwa = ? WHERE id = ?", (nowa_nazwa, folder_id))
+            conn.execute(
+                "UPDATE foldery SET nazwa = ?, kolor = ?, wazne = ? WHERE id = ?",
+                (nowa_nazwa, kolor, wazne, folder_id),
+            )
             nowa_relatywna = self._get_physical_path(folder_id, conn)
             nowa_full = os.path.join(self.storage_dir, nowa_relatywna)
 
@@ -496,6 +543,33 @@ class ArchiveLogic:
 
             self._napraw_sciezki_plikow_w_folderze(folder_id, conn)
             conn.commit()
+
+    def zmien_nazwe_folderu(self, folder_id, nowa_nazwa):
+        """Zachowuje kompatybilność dla starszych wywołań zmiany nazwy folderu."""
+        folder = self.pobierz_folder(folder_id)
+        if folder is None:
+            raise ValueError("Folder nie istnieje.")
+        self.aktualizuj_folder(folder_id, nowa_nazwa, folder["kolor"], folder["wazne"])
+
+    def aktualizuj_dokument(self, doc_id, tytul, opis, data_str, wazne=False):
+        """Aktualizuje metadane dokumentu oraz dostosowuje jego fizyczną nazwę."""
+        wazne = int(bool(wazne))
+
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM dokumenty WHERE id = ?",
+                (doc_id,),
+            ).fetchone()
+            if row is None:
+                raise ValueError("Nie znaleziono dokumentu.")
+
+            conn.execute(
+                "UPDATE dokumenty SET tytul = ?, opis = ?, data_dok = ?, wazne = ? WHERE id = ?",
+                (tytul, opis, data_str, wazne, doc_id),
+            )
+            conn.commit()
+
+        return self.zmien_nazwe_pliku_fizycznie(doc_id, tytul, data_str)
 
     def zmien_nazwe_pliku_fizycznie(self, doc_id, nowy_tytul, nowa_data):
         """Dostosowuje nazwę fizycznego pliku do nowych metadanych dokumentu."""

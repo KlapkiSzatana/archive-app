@@ -83,7 +83,9 @@ jobs:
           files: dist/ArchiveApp_linux.tar.gz
           body: |
             ## Wersja ${{ github.ref_name }}
-            - Automatyczna kompilacja kompletnej paczki dla systemów Linux.
-            - Zawiera: `ArchiveApp_linux.tar.gz` (folder aplikacji wraz ze skrótem `.desktop`).
+            - Dodanie wyświetlania rozmiaru poszczególnych katalogów
+            - Dodanie możliwości importowania całych katalogów wraz z zawartością
+            - Poprawki stabilności podczas pracy z większymi katalogami
+            - Poprawki obsługi wybranych operacji na plikach
           draft: false
           prerelease: false
