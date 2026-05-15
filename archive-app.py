@@ -1912,35 +1912,22 @@ class DomoweArchiwum(QMainWindow):
         """Otwiera dokument w domyślnej aplikacji systemowej, czyszcząc środowisko PyInstallera."""
         if not idx:
             return
-
-        if hasattr(idx, "data"):
-            data = idx.data(Qt.UserRole)
-        else:
-            data = idx
-
-        if not data or data.get("type") != "doc":
+        data = idx.data(Qt.UserRole)
+        if not data or data["type"] != "doc":
             return
 
         path = os.path.join(self.archive_path, data["path"])
-
         if not os.path.exists(path):
-            self._show_error(f"Plik nie istnieje:\n{path}")
+            self._show_error("Plik nie istnieje.")
             return
-
         try:
             env = os.environ.copy()
+            if "LD_LIBRARY_PATH" in env:
+                env["LD_LIBRARY_PATH"] = env.get("LD_LIBRARY_PATH_ORIG", "")
 
-            if "LD_LIBRARY_PATH_ORIG" in env:
-                env["LD_LIBRARY_PATH"] = env["LD_LIBRARY_PATH_ORIG"]
-                del env["LD_LIBRARY_PATH_ORIG"]
-            elif "LD_LIBRARY_PATH" in env:
-                del env["LD_LIBRARY_PATH"]
+            subprocess.run(["xdg-open", path], check=False, env=env)
 
-            # Używamy listy [komenda, argument], co chroni przed błędami w ścieżkach ze spacjami.
-            # xdg-open jest najbardziej uniwersalny (zadziała na KDE, GNOME, XFCE).
-            subprocess.Popen(["xdg-open", path], env=env)
-
-        except Exception as exc:
+        except OSError as exc:
             self._show_error(f"Nie udało się otworzyć pliku:\n{exc}")
 
     def action_new_sub(self):
