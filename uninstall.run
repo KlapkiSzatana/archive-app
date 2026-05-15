@@ -1,6 +1,5 @@
 #!/bin/bash
 
-# Kolory dla komunikatów
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 NC='\033[0m'
@@ -10,7 +9,6 @@ echo " Deinstalacja aplikacji: Domowe Archiwum"
 echo "====================================================="
 echo ""
 
-# 1. Wymuszenie uprawnień administratora
 if [ "$EUID" -ne 0 ]; then
     echo -e "${RED}Deinstalacja wymaga uprawnień administratora (root).${NC}"
     echo "Prosze podać hasło, aby kontynuować..."
@@ -21,7 +19,6 @@ fi
 INSTALL_DIR="/opt/ArchiveApp"
 DESKTOP_FILE="/usr/share/applications/ArchiveApp.desktop"
 
-# 2. Usunięcie głównych plików aplikacji
 if [ -d "$INSTALL_DIR" ]; then
     echo "-> Usuwanie plików aplikacji z $INSTALL_DIR..."
     rm -rf "$INSTALL_DIR"
@@ -29,7 +26,6 @@ else
     echo "-> Folder aplikacji w $INSTALL_DIR już nie istnieje."
 fi
 
-# 3. Usunięcie skrótu z menu systemowego
 if [ -f "$DESKTOP_FILE" ]; then
     echo "-> Usuwanie skrótu z menu aplikacji..."
     rm -f "$DESKTOP_FILE"
@@ -37,7 +33,6 @@ else
     echo "-> Skrót w $DESKTOP_FILE już nie istnieje."
 fi
 
-# 4. Odświeżenie menu systemowego
 echo "-> Odświeżanie menu aplikacji..."
 if command -v update-desktop-database &> /dev/null; then
     update-desktop-database /usr/share/applications
