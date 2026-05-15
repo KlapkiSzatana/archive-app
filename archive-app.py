@@ -1909,27 +1909,53 @@ class DomoweArchiwum(QMainWindow):
             self.preview.preview_file(path)
 
     def otworz_zewnetrznie(self, idx):
-        """Otwiera dokument w domyślnej aplikacji systemowej, czyszcząc środowisko PyInstallera."""
+        """Otwiera dokument w domyślnej aplikacji systemowej w czystym środowisku."""
         if not idx:
             return
-        data = idx.data(Qt.UserRole)
-        if not data or data["type"] != "doc":
+
+        # Obsługa zarówno indeksu z widoku, jak i surowych danych
+        data = idx.data(Qt.UserRole) if hasattr(idx, "data") else idx
+
+        if not data or data.get("type") != "doc":
             return
 
-        path = os.path.join(self.archive_path, data["path"])
+        path = os.path.abspath(os.path.join(self.archive_path, data["path"]))
+
         if not os.path.exists(path):
-            self._show_error("Plik nie istnieje.")
+            self._show_error(f"Plik nie istnieje:\n{path}")
             return
+
         try:
+            # Tworzymy kopię środowiska
             env = os.environ.copy()
-            if "LD_LIBRARY_PATH" in env:
-                env["LD_LIBRARY_PATH"] = env.get("LD_LIBRARY_PATH_ORIG", "")
 
-            subprocess.run(["xdg-open", path], check=False, env=env)
+            # Lista zmiennych, które PyInstaller ustawia i które psują systemowe aplikacje Qt
+            vars_to_clean = [
+                "LD_LIBRARY_PATH",
+                "QT_PLUGIN_PATH",
+                "QT_QPA_PLATFORM_PLUGIN_PATH",
+                "QT_QPA_PLATFORM",
+                "PYTHONHOME",
+                "PYTHONPATH"
+            ]
 
-        except OSError as exc:
-            self._show_error(f"Nie udało się otworzyć pliku:\n{exc}")
+            for var in vars_to_clean:
+                # Jeśli PyInstaller zapisał oryginał (z końcówką _ORIG), przywracamy go
+                orig = f"{var}_ORIG"
+                if orig in env:
+                    env[var] = env[orig]
+                    del env[orig]
+                else:
+                    # Jeśli nie ma oryginału, po prostu usuwamy zmienną,
+                    # by podproces użył domyślnych ustawień systemowych
+                    env.pop(var, None)
 
+            # Używamy Popen zamiast run, żeby nie mrozić interfejsu Archive App
+            # i xdg-open, bo sam to wcześniej sugerowałeś jako działające
+            subprocess.Popen(["xdg-open", path], env=env)
+
+        except Exception as exc:
+            self._show_error(f"Błąd podczas otwierania pliku:\n{exc}")
     def action_new_sub(self):
         """Dodaje podfolder do aktualnie zaznaczonego folderu."""
         idx = self.tree_view.currentIndex()
