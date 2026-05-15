@@ -108,7 +108,7 @@ fpm --version
 Najpierw przygotuj strukturę paczki:
 
 ```bash
-VERSION="1.3.0"
+VERSION="1.3.1"
 
 rm -rf build/package-root build/packages
 mkdir -p build/package-root/usr/lib/archive-app

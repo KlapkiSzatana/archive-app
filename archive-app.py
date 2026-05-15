@@ -68,7 +68,7 @@ from PySide6.QtWidgets import (
 
 from logic import ArchiveLogic
 
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.3.1"
 COPYRIGHT = "KlapkiSzatana"
 PASTEL_FOLDER_COLORS = [
     ("Bez koloru", ""),
@@ -1912,22 +1912,35 @@ class DomoweArchiwum(QMainWindow):
         """Otwiera dokument w domyślnej aplikacji systemowej, czyszcząc środowisko PyInstallera."""
         if not idx:
             return
-        data = idx.data(Qt.UserRole)
-        if not data or data["type"] != "doc":
+
+        if hasattr(idx, "data"):
+            data = idx.data(Qt.UserRole)
+        else:
+            data = idx
+
+        if not data or data.get("type") != "doc":
             return
 
         path = os.path.join(self.archive_path, data["path"])
+
         if not os.path.exists(path):
-            self._show_error("Plik nie istnieje.")
+            self._show_error(f"Plik nie istnieje:\n{path}")
             return
+
         try:
             env = os.environ.copy()
-            if "LD_LIBRARY_PATH" in env:
-                env["LD_LIBRARY_PATH"] = env.get("LD_LIBRARY_PATH_ORIG", "")
 
-            subprocess.run(["xdg-open", path], check=False, env=env)
+            if "LD_LIBRARY_PATH_ORIG" in env:
+                env["LD_LIBRARY_PATH"] = env["LD_LIBRARY_PATH_ORIG"]
+                del env["LD_LIBRARY_PATH_ORIG"]
+            elif "LD_LIBRARY_PATH" in env:
+                del env["LD_LIBRARY_PATH"]
 
-        except OSError as exc:
+            # Używamy listy [komenda, argument], co chroni przed błędami w ścieżkach ze spacjami.
+            # xdg-open jest najbardziej uniwersalny (zadziała na KDE, GNOME, XFCE).
+            subprocess.Popen(["xdg-open", path], env=env)
+
+        except Exception as exc:
             self._show_error(f"Nie udało się otworzyć pliku:\n{exc}")
 
     def action_new_sub(self):
